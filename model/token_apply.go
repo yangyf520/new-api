@@ -244,9 +244,12 @@ func IssueTokenApplication(req *IssueTokenRequest) (*IssueTokenResult, error) {
 	if req.TicketNo == "" || req.Email == "" || req.OrgCode == "" {
 		return nil, errors.New("ticket_no、email、org_code 为必填项")
 	}
+	if err := validateIssueTokenRequestEnums(req); err != nil {
+		return nil, err
+	}
 
-	tokenType := normalizeTokenApplyType(req.TokenType)
-	quotaMode := normalizeQuotaMode(req.QuotaMode)
+	tokenType := req.TokenType
+	quotaMode := req.QuotaMode
 	if tokenType == TokenApplyTypeUser && strings.TrimSpace(req.WorkNo) == "" {
 		return nil, errors.New("user 类型必须提供 work_no")
 	}
@@ -418,6 +421,9 @@ func UpdateTokenApplication(tokenApplyId int, req *UpdateTokenRequest) (*UpdateT
 	req.Amount = common.RoundDecimal(req.Amount)
 	if req.Amount < 0 {
 		return nil, errors.New("amount 不能为负数")
+	}
+	if err := validateUpdateTokenRequestEnums(req); err != nil {
+		return nil, err
 	}
 
 	if _, err := GetTokenApplyLogByChangeTicket(tokenApplyId, req.ChangeTicketNo); err == nil {
@@ -906,6 +912,145 @@ func resolveIssueTokenGroup(req *IssueTokenRequest) string {
 // NormalizeTokenApplyType normalizes token_type to user or app.
 func NormalizeTokenApplyType(tokenType string) string {
 	return normalizeTokenApplyType(tokenType)
+}
+
+func validateIssueTokenRequestEnums(req *IssueTokenRequest) error {
+	tokenType, err := parseTokenApplyType(req.TokenType)
+	if err != nil {
+		return err
+	}
+	req.TokenType = tokenType
+
+	quotaMode, err := parseQuotaMode(req.QuotaMode)
+	if err != nil {
+		return err
+	}
+	req.QuotaMode = quotaMode
+
+	scopeType, err := parseIssueScopeType(req)
+	if err != nil {
+		return err
+	}
+	req.ScopeType = scopeType
+
+	parentScopeType, err := parseParentScopeType(req.ParentScopeType)
+	if err != nil {
+		return err
+	}
+	req.ParentScopeType = parentScopeType
+
+	periodType, err := parseConsumePeriodType(req.ConsumePeriodType)
+	if err != nil {
+		return err
+	}
+	req.ConsumePeriodType = periodType
+	return nil
+}
+
+func validateUpdateTokenRequestEnums(req *UpdateTokenRequest) error {
+	if s := strings.TrimSpace(req.ScopeType); s != "" {
+		lower := strings.ToLower(s)
+		if _, ok := allowedTokenSpendScopeTypes[lower]; !ok {
+			return fmt.Errorf("scope_type 格式无效，仅支持 company、org、team、project、token")
+		}
+		if lower == "token" && updateRequestHasBudgetSync(req) {
+			return errors.New("scope_type=token 仅用于消耗策略，不能用于审批总包")
+		}
+		req.ScopeType = lower
+	}
+	if s := strings.TrimSpace(req.ParentScopeType); s != "" {
+		lower := strings.ToLower(s)
+		if _, ok := allowedTokenBudgetScopeTypes[lower]; !ok {
+			return fmt.Errorf("parent_scope_type 格式无效，仅支持 company、org、team、project")
+		}
+		req.ParentScopeType = lower
+	}
+	if s := strings.TrimSpace(req.ConsumePeriodType); s != "" {
+		lower := strings.ToLower(s)
+		if _, ok := allowedTokenSpendPeriodTypes[lower]; !ok {
+			return fmt.Errorf("consume_period_type 格式无效，仅支持 day、week、month、none")
+		}
+		req.ConsumePeriodType = lower
+	}
+	return nil
+}
+
+func issueRequestHasBudgetSync(req *IssueTokenRequest) bool {
+	if req == nil {
+		return false
+	}
+	return common.RoundDecimal(req.OrgBudget) > 0 ||
+		common.RoundDecimal(req.ProjectBudget) > 0 ||
+		common.RoundDecimal(req.ParentOrgBudget) > 0
+}
+
+func updateRequestHasBudgetSync(req *UpdateTokenRequest) bool {
+	if req == nil {
+		return false
+	}
+	return common.RoundDecimal(req.OrgBudget) > 0 ||
+		common.RoundDecimal(req.ProjectBudget) > 0 ||
+		common.RoundDecimal(req.ParentOrgBudget) > 0
+}
+
+func parseTokenApplyType(raw string) (string, error) {
+	raw = strings.TrimSpace(strings.ToLower(raw))
+	if raw == "" {
+		return TokenApplyTypeUser, nil
+	}
+	if raw == TokenApplyTypeUser || raw == TokenApplyTypeApp {
+		return raw, nil
+	}
+	return "", fmt.Errorf("token_type 格式无效，仅支持 user 或 app")
+}
+
+func parseQuotaMode(raw string) (string, error) {
+	raw = strings.TrimSpace(strings.ToLower(raw))
+	if raw == "" {
+		return TokenApplyQuotaModeFixed, nil
+	}
+	if raw == TokenApplyQuotaModeFixed || raw == TokenApplyQuotaModeUnlimited {
+		return raw, nil
+	}
+	return "", fmt.Errorf("quota_mode 格式无效，仅支持 fixed 或 unlimited")
+}
+
+func parseIssueScopeType(req *IssueTokenRequest) (string, error) {
+	raw := strings.TrimSpace(req.ScopeType)
+	if raw == "" {
+		return "team", nil
+	}
+	s := strings.ToLower(raw)
+	if _, ok := allowedTokenSpendScopeTypes[s]; !ok {
+		return "", fmt.Errorf("scope_type 格式无效，仅支持 company、org、team、project、token")
+	}
+	if s == "token" && issueRequestHasBudgetSync(req) {
+		return "", errors.New("scope_type=token 仅用于消耗策略，不能用于审批总包")
+	}
+	return s, nil
+}
+
+func parseParentScopeType(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", nil
+	}
+	s := strings.ToLower(raw)
+	if _, ok := allowedTokenBudgetScopeTypes[s]; !ok {
+		return "", fmt.Errorf("parent_scope_type 格式无效，仅支持 company、org、team、project")
+	}
+	return s, nil
+}
+
+func parseConsumePeriodType(raw string) (string, error) {
+	raw = strings.TrimSpace(strings.ToLower(raw))
+	if raw == "" {
+		return "month", nil
+	}
+	if _, ok := allowedTokenSpendPeriodTypes[raw]; !ok {
+		return "", fmt.Errorf("consume_period_type 格式无效，仅支持 day、week、month、none")
+	}
+	return raw, nil
 }
 
 func normalizeTokenApplyType(tokenType string) string {
