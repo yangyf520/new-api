@@ -27,6 +27,7 @@ import {
   ListTodo,
   MessageSquare,
   Radio,
+  ReceiptText,
   ServerCog,
   Settings,
   Ticket,
@@ -107,6 +108,17 @@ export function useSidebarData(): SidebarData {
             title: t('Wallet'),
             url: '/wallet',
             icon: Wallet,
+          },
+          {
+            title: t('Department Quota'),
+            url: '/token-apply',
+            activeUrls: ['/token-apply'],
+            configUrls: [
+              '/token-apply',
+              '/token-apply/budget',
+              '/token-apply/consumption',
+            ],
+            icon: ReceiptText,
           },
           {
             title: t('Profile'),

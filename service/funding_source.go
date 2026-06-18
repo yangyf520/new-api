@@ -64,6 +64,20 @@ func (w *WalletFunding) Refund() error {
 }
 
 // ---------------------------------------------------------------------------
+// TokenApplyFunding — token-apply 发放 Key：只扣 tokens，不碰 users.quota
+// ---------------------------------------------------------------------------
+
+type TokenApplyFunding struct{}
+
+func (TokenApplyFunding) Source() string { return BillingSourceWallet }
+
+func (TokenApplyFunding) PreConsume(amount int) error { return nil }
+
+func (TokenApplyFunding) Settle(delta int) error { return nil }
+
+func (TokenApplyFunding) Refund() error { return nil }
+
+// ---------------------------------------------------------------------------
 // SubscriptionFunding — 订阅资金来源实现
 // ---------------------------------------------------------------------------
 

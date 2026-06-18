@@ -71,6 +71,7 @@ export const SIDEBAR_MODULES_DEFAULT: SidebarModulesAdminConfig = {
     enabled: true,
     topup: true,
     personal: true,
+    token_apply: true,
   },
   admin: {
     enabled: true,
