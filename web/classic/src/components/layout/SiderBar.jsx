@@ -49,6 +49,7 @@ const routerMap = {
   deployment: '/console/deployment',
   playground: '/console/playground',
   personal: '/console/personal',
+  token_apply: '/console/token-apply',
 };
 
 const SiderBar = ({ onNavigate = () => {} }) => {
@@ -128,6 +129,11 @@ const SiderBar = ({ onNavigate = () => {} }) => {
         text: t('钱包管理'),
         itemKey: 'topup',
         to: '/topup',
+      },
+      {
+        text: t('部门额度'),
+        itemKey: 'token_apply',
+        to: '/console/token-apply',
       },
       {
         text: t('个人设置'),

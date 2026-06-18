@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -12,6 +13,7 @@ import (
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 func buildMaskedTokenResponse(token *model.Token) *model.Token {
@@ -34,12 +36,12 @@ func buildMaskedTokenResponses(tokens []*model.Token) []*model.Token {
 func GetAllTokens(c *gin.Context) {
 	userId := c.GetInt("id")
 	pageInfo := common.GetPageQuery(c)
-	tokens, err := model.GetAllUserTokens(userId, pageInfo.GetStartIdx(), pageInfo.GetPageSize())
+	scope := tokenApplyPortalScope(c)
+	tokens, total, err := model.GetAllUserTokensAccessible(userId, scope, pageInfo.GetStartIdx(), pageInfo.GetPageSize())
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
-	total, _ := model.CountUserTokens(userId)
 	pageInfo.SetTotal(int(total))
 	pageInfo.SetItems(buildMaskedTokenResponses(tokens))
 	common.ApiSuccess(c, pageInfo)
@@ -71,8 +73,13 @@ func GetToken(c *gin.Context) {
 	}
 	token, err := model.GetTokenByIds(id, userId)
 	if err != nil {
-		common.ApiError(c, err)
-		return
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			token, err = model.GetTokenByIdIfTokenApplyVisible(tokenApplyPortalScope(c), id)
+		}
+		if err != nil {
+			common.ApiError(c, err)
+			return
+		}
 	}
 	common.ApiSuccess(c, buildMaskedTokenResponse(token))
 }
@@ -86,8 +93,13 @@ func GetTokenKey(c *gin.Context) {
 	}
 	token, err := model.GetTokenByIds(id, userId)
 	if err != nil {
-		common.ApiError(c, err)
-		return
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			token, err = model.GetTokenByIdIfTokenApplyVisible(tokenApplyPortalScope(c), id)
+		}
+		if err != nil {
+			common.ApiError(c, err)
+			return
+		}
 	}
 	common.ApiSuccess(c, gin.H{
 		"key": token.GetFullKey(),

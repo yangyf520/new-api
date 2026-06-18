@@ -23,10 +23,11 @@ import (
 // BillingSession 封装单次请求的预扣费/结算/退款生命周期。
 // 实现 relaycommon.BillingSettler 接口。
 type BillingSession struct {
-	relayInfo        *relaycommon.RelayInfo
-	funding          FundingSource
-	preConsumedQuota int  // 实际预扣额度（信任用户可能为 0）
-	tokenConsumed    int  // 令牌额度实际扣减量
+	relayInfo            *relaycommon.RelayInfo
+	funding              FundingSource
+	preConsumedQuota     int  // 实际预扣额度（信任用户可能为 0）
+	consumptionReserved  int  // counter 预占额度（用请求预估，不受信任旁路影响）
+	tokenConsumed        int  // 令牌额度实际扣减量
 	extraReserved    int  // 发送前补充预扣的额度（订阅退款时需要单独回滚）
 	trusted          bool // 是否命中信任额度旁路
 	fundingSettled   bool // funding.Settle 已成功，资金来源已提交
@@ -49,33 +50,38 @@ func (s *BillingSession) Settle(actualQuota int) error {
 		s.settled = true
 		return nil
 	}
-	// 1) 调整资金来源（仅在尚未提交时执行，防止重复调用）
-	if !s.fundingSettled {
-		if err := s.funding.Settle(delta); err != nil {
+
+	// 1) 先调整令牌额度，失败则不碰资金来源
+	if !skipTokenQuotaDeduction(s.relayInfo) {
+		if err := s.applyTokenDelta(delta); err != nil {
 			return err
 		}
-		s.fundingSettled = true
 	}
-	// 2) 调整令牌额度
-	var tokenErr error
-	if !s.relayInfo.IsPlayground {
-		if delta > 0 {
-			tokenErr = model.DecreaseTokenQuota(s.relayInfo.TokenId, s.relayInfo.TokenKey, delta)
-		} else {
-			tokenErr = model.IncreaseTokenQuota(s.relayInfo.TokenId, s.relayInfo.TokenKey, -delta)
+
+	// 2) 再调整资金来源；失败则回滚令牌
+	if err := s.funding.Settle(delta); err != nil {
+		if !skipTokenQuotaDeduction(s.relayInfo) {
+			if rollbackErr := s.applyTokenDelta(-delta); rollbackErr != nil {
+				common.SysLog(fmt.Sprintf("error rolling back token quota after funding settle failed (userId=%d, tokenId=%d, delta=%d): %s",
+					s.relayInfo.UserId, s.relayInfo.TokenId, delta, rollbackErr.Error()))
+			}
 		}
-		if tokenErr != nil {
-			// 资金来源已提交，令牌调整失败只能记录日志；标记 settled 防止 Refund 误退资金
-			common.SysLog(fmt.Sprintf("error adjusting token quota after funding settled (userId=%d, tokenId=%d, delta=%d): %s",
-				s.relayInfo.UserId, s.relayInfo.TokenId, delta, tokenErr.Error()))
-		}
+		return err
 	}
-	// 3) 更新 relayInfo 上的订阅 PostDelta（用于日志）
+	s.fundingSettled = true
+
 	if s.funding.Source() == BillingSourceSubscription {
 		s.relayInfo.SubscriptionPostDelta += int64(delta)
 	}
 	s.settled = true
-	return tokenErr
+	return nil
+}
+
+func (s *BillingSession) applyTokenDelta(delta int) error {
+	if delta > 0 {
+		return model.DecreaseTokenQuota(s.relayInfo.TokenId, s.relayInfo.TokenKey, delta)
+	}
+	return model.IncreaseTokenQuota(s.relayInfo.TokenId, s.relayInfo.TokenKey, -delta)
 }
 
 // Refund 退还所有预扣费，幂等安全，异步执行。
@@ -86,7 +92,16 @@ func (s *BillingSession) Refund(c *gin.Context) {
 		return
 	}
 	s.refunded = true
+	consumptionReserved := s.consumptionReserved
+	relayInfo := s.relayInfo
 	s.mu.Unlock()
+
+	if consumptionReserved > 0 && relayInfo != nil {
+		if err := ReleaseConsumption(relayInfo, consumptionReserved); err != nil {
+			common.SysLog("error releasing consumption reservation: " + err.Error())
+		}
+		relayInfo.ConsumptionReservedQuota = 0
+	}
 
 	logger.LogInfo(c, fmt.Sprintf("用户 %d 请求失败, 返还预扣费（token_quota=%s, funding=%s）",
 		s.relayInfo.UserId,
@@ -284,6 +299,13 @@ func (s *BillingSession) shouldTrust(c *gin.Context) bool {
 	if s.relayInfo.ForcePreConsume {
 		return false
 	}
+	// token-apply 与配置了消耗封顶时，必须预扣 token
+	if _, ok := s.funding.(*TokenApplyFunding); ok {
+		return false
+	}
+	if hasPolicies, err := HasConsumptionPoliciesForRelay(s.relayInfo); err != nil || hasPolicies {
+		return false
+	}
 
 	trustQuota := common.GetTrustQuota()
 	if trustQuota <= 0 {
@@ -342,6 +364,17 @@ func (s *BillingSession) syncRelayInfo() {
 func NewBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preConsumedQuota int) (*BillingSession, *types.NewAPIError) {
 	if relayInfo == nil {
 		return nil, types.NewError(fmt.Errorf("relayInfo is nil"), types.ErrorCodeInvalidRequest, types.ErrOptionWithSkipRetry())
+	}
+
+	if model.IsTokenApplyToken(relayInfo.TokenId) {
+		session := &BillingSession{
+			relayInfo: relayInfo,
+			funding:   &TokenApplyFunding{},
+		}
+		if apiErr := session.preConsume(c, preConsumedQuota); apiErr != nil {
+			return nil, apiErr
+		}
+		return session, nil
 	}
 
 	pref := common.NormalizeBillingPreference(relayInfo.UserSetting.BillingPreference)

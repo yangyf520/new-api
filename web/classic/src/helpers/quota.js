@@ -23,6 +23,30 @@ export const getQuotaPerUnit = () => {
   return Number.isFinite(raw) && raw > 0 ? raw : 1;
 };
 
+export const quotaToApplicationAmount = (quota, currency = 'CNY') => {
+  const q = Number(quota || 0);
+  if (!Number.isFinite(q) || q <= 0) return 0;
+  const usd = q / getQuotaPerUnit();
+  const normalized = String(currency || 'CNY').trim().toUpperCase();
+  if (normalized === 'USD') {
+    return Math.round(usd * 10000) / 10000;
+  }
+  if (normalized === 'CNY' || normalized === 'RMB' || normalized === '') {
+    let rate = 1;
+    try {
+      const statusStr = localStorage.getItem('status');
+      if (statusStr) {
+        const status = JSON.parse(statusStr);
+        rate = status?.usd_exchange_rate || 1;
+      }
+    } catch {
+      // ignore
+    }
+    return Math.round(usd * rate * 10000) / 10000;
+  }
+  return Math.round(usd * 10000) / 10000;
+};
+
 export const quotaToDisplayAmount = (quota) => {
   const q = Number(quota || 0);
   if (!Number.isFinite(q) || q === 0) return 0;

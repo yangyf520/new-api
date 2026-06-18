@@ -1,0 +1,466 @@
+{
+  "openapi": "3.0.1",
+  "info": {
+    "title": "令牌发放集成接口（token-apply）",
+    "description": "审批系统 / OA 等第三方集成方使用的写接口。\n\n- **鉴权**：请求头 `X-Api-Key`（环境变量 `TOKEN_API_KEY` 或运营设置 `token_apply_setting.api_key`）\n- **一流程一 Key**：每个 `ticket_no` 只发放一个 `sk-...` 令牌\n- **幂等**：同 `ticket_no` 重复 `POST` 返回原结果，不改额度、不增审计\n- **总包**：`org_budget` / `parent_org_budget` / `project_budget` 自动同步到 `token_budget_policies`，不进台账表\n- **模型调用**：发放响应中的 `token_key` 用于 `POST /v1/*`（见 `relay.json`）\n\n详细业务规则见 [token-apply-design.md](../design/token-apply-design.md)。",
+    "version": "1.0.0"
+  },
+  "tags": [
+    {
+      "name": "令牌发放",
+      "description": "审批通过后发放 Key、变更额度"
+    },
+    {
+      "name": "消耗策略",
+      "description": "可选：组织/Key 日周月消耗封顶（③）"
+    }
+  ],
+  "servers": [
+    {
+      "url": "http://localhost:3000",
+      "description": "本地开发（请按实际环境替换）"
+    }
+  ],
+  "paths": {
+    "/api/token-apply": {
+      "post": {
+        "summary": "发放令牌",
+        "operationId": "issueToken",
+        "description": "审批通过后创建用户（如不存在）、台账、令牌与审计记录；可选同步审批总包策略。\n\n**必填**：`ticket_no`、`email`、`org_code`、`amount`；`token_type=user` 时另需 `work_no`。\n\n**幂等**：相同 `ticket_no` 再次请求返回已有 `token_apply_id` / `token_key`。",
+        "tags": ["令牌发放"],
+        "security": [{ "TokenApplyApiKey": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/IssueTokenRequest" },
+              "examples": {
+                "user": {
+                  "summary": "员工令牌（全参示例）",
+                  "value": {
+                    "ticket_no": "WO-2025-001",
+                    "record_id": "rec_8a1b2c",
+                    "email": "zhang@corp.com",
+                    "amount": 3000,
+                    "currency": "CNY",
+                    "org_code": "D001-T010",
+                    "org_name": "平台研发组",
+                    "org_budget": 30000,
+                    "project_code": "PRJ-2025-01",
+                    "project_budget": 5000,
+                    "token_type": "user",
+                    "quota_mode": "fixed",
+                    "scope_type": "team",
+                    "org_consumption_cap": 500,
+                    "consume_period_type": "day",
+                    "parent_org_code": "D001",
+                    "parent_org_budget": 100000,
+                    "parent_scope_type": "org",
+                    "work_no": "E10086",
+                    "user_name": "张三",
+                    "token_name": "WO-2025-001",
+                    "token_group": "default",
+                    "remark": "新项目立项"
+                  }
+                },
+                "app": {
+                  "summary": "应用令牌",
+                  "value": {
+                    "ticket_no": "WO-2025-APP-01",
+                    "email": "owner@corp.com",
+                    "amount": 10000,
+                    "currency": "CNY",
+                    "org_code": "D001",
+                    "org_name": "企业信息部",
+                    "token_type": "app",
+                    "remark": "客服机器人"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "HTTP 200。`success=true` 为成功；业务失败时仍为 200 且 `success=false`（见 message）。",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/IssueTokenResponse" },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "success": true,
+                      "message": "",
+                      "data": {
+                        "token_apply_id": 43,
+                        "user_id": 8,
+                        "token_id": 46,
+                        "token_key": "sk-DaSNRoGC0oPObPUZakFVM53FBjEIqLaVEix6MNya6LxjCxlE",
+                        "token_name": "WO-2025-001",
+                        "remain_quota": 205479452
+                      }
+                    }
+                  },
+                  "budgetExceeded": {
+                    "value": {
+                      "success": false,
+                      "message": "预算不足：team D001-T010 累计已批 28000，本次 3000 将超出上限 30000"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未提供或错误的 X-Api-Key",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/EmptyBody" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/token-apply/{id}": {
+      "put": {
+        "summary": "变更额度",
+        "operationId": "updateIssuedToken",
+        "description": "按 `token_apply_id` 增额或减额。`change_ticket_no` 幂等。\n\n增额时审批预算只计**增量**；减额时新 `remain_quota` 不得低于已消耗，否则拒绝且不写审计。\n\n不可修改：`email`、`work_no`、`token_type`、首次 `ticket_no`。",
+        "tags": ["令牌发放"],
+        "security": [{ "TokenApplyApiKey": [] }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "发放响应中的 token_apply_id",
+            "schema": { "type": "integer", "example": 43 }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateTokenRequest" },
+              "example": {
+                "change_ticket_no": "WO-2025-001-CHG-1",
+                "record_id": "rec_9d4e5f",
+                "amount": 5000,
+                "currency": "CNY",
+                "org_budget": 50000,
+                "org_consumption_cap": 800,
+                "consume_period_type": "day",
+                "project_budget": 8000,
+                "scope_type": "team",
+                "parent_org_code": "D001",
+                "parent_org_budget": 120000,
+                "parent_scope_type": "org",
+                "remark": "项目扩容"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "HTTP 200。`success=true` 为成功。",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/UpdateTokenResponse" },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "success": true,
+                      "message": "",
+                      "data": {
+                        "token_apply_id": 43,
+                        "token_id": 46,
+                        "amount": 5000,
+                        "remain_quota": 342465753
+                      }
+                    }
+                  },
+                  "reduceRejected": {
+                    "value": {
+                      "success": false,
+                      "message": "减额后可用额度 1000000 低于已消耗 2000000"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未提供或错误的 X-Api-Key",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/EmptyBody" }
+              }
+            }
+          }
+        }
+      }
+    }
+
+  },
+  "components": {
+    "securitySchemes": {
+      "TokenApplyApiKey": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Api-Key",
+        "description": "集成方密钥。配置于环境变量 TOKEN_API_KEY 或运营设置 token_apply_setting.api_key。"
+      }
+    },
+    "schemas": {
+      "IssueTokenRequest": {
+        "type": "object",
+        "required": ["ticket_no", "email", "org_code", "amount"],
+        "properties": {
+          "ticket_no": {
+            "type": "string",
+            "description": "流程工单号，幂等键"
+          },
+          "record_id": {
+            "type": "string",
+            "description": "外部系统记录 ID，便于对账"
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "description": "申请人邮箱；user 类型 Key 归属该用户"
+          },
+          "amount": {
+            "type": "number",
+            "format": "double",
+            "description": "本笔审批金额（分包，元），换算为 Key 的 remain_quota",
+            "example": 3000
+          },
+          "currency": {
+            "type": "string",
+            "description": "金额币种，默认 CNY",
+            "default": "CNY",
+            "enum": ["CNY", "RMB", "USD"]
+          },
+          "org_code": {
+            "type": "string",
+            "description": "部门/团队编码"
+          },
+          "org_name": {
+            "type": "string",
+            "description": "部门名称（展示）"
+          },
+          "org_budget": {
+            "type": "number",
+            "format": "double",
+            "description": "部门审批总上限（总包①，元），自动 upsert token_budget_policies"
+          },
+          "org_consumption_cap": {
+            "type": "number",
+            "format": "double",
+            "description": "部门周期消耗封顶（元），自动 upsert token_spend_policies（③）"
+          },
+          "consume_period_type": {
+            "type": "string",
+            "description": "消耗封顶周期，默认 month",
+            "default": "month",
+            "enum": ["day", "week", "month", "none"]
+          },
+          "project_code": {
+            "type": "string",
+            "description": "项目编码"
+          },
+          "project_budget": {
+            "type": "number",
+            "format": "double",
+            "description": "项目审批总上限（元），需配合 project_code"
+          },
+          "token_type": {
+            "type": "string",
+            "description": "user=员工令牌；app=应用令牌（Key 归 app_user_email）",
+            "default": "user",
+            "enum": ["user", "app"]
+          },
+          "quota_mode": {
+            "type": "string",
+            "description": "fixed=计入审批预算；unlimited=不计入①但仍按 amount 设 Key 额度",
+            "default": "fixed",
+            "enum": ["fixed", "unlimited"]
+          },
+          "scope_type": {
+            "type": "string",
+            "description": "org_budget 对应的 token_budget_policies.scope_type",
+            "default": "team",
+            "enum": ["company", "org", "team", "project"]
+          },
+          "parent_org_code": {
+            "type": "string",
+            "description": "上级组织编码"
+          },
+          "parent_org_budget": {
+            "type": "number",
+            "format": "double",
+            "description": "上级组织审批总上限（元）"
+          },
+          "parent_scope_type": {
+            "type": "string",
+            "description": "上级总包 scope_type，默认 org",
+            "default": "org",
+            "enum": ["company", "org", "team"]
+          },
+          "work_no": {
+            "type": "string",
+            "description": "工号；token_type=user 时必填"
+          },
+          "user_name": {
+            "type": "string",
+            "description": "申请人姓名（展示）"
+          },
+          "token_name": {
+            "type": "string",
+            "description": "令牌名称；未传时默认 ticket_no"
+          },
+          "token_group": {
+            "type": "string",
+            "description": "Relay 分组；未传时默认 org_code"
+          },
+          "remark": {
+            "type": "string",
+            "description": "备注"
+          }
+        }
+      },
+      "UpdateTokenRequest": {
+        "type": "object",
+        "required": ["change_ticket_no", "amount"],
+        "properties": {
+          "change_ticket_no": {
+            "type": "string",
+            "description": "变更单号，幂等键"
+          },
+          "record_id": {
+            "type": "string",
+            "description": "外部记录 ID"
+          },
+          "amount": {
+            "type": "number",
+            "format": "double",
+            "description": "变更后的总审批额（元），非增量"
+          },
+          "currency": {
+            "type": "string",
+            "default": "CNY"
+          },
+          "org_budget": {
+            "type": "number",
+            "format": "double",
+            "description": "更新部门总包上限（可选）"
+          },
+          "org_consumption_cap": {
+            "type": "number",
+            "format": "double",
+            "description": "更新部门消耗封顶（可选）"
+          },
+          "consume_period_type": {
+            "type": "string",
+            "enum": ["day", "week", "month", "none"],
+            "description": "更新消耗封顶周期"
+          },
+          "project_budget": {
+            "type": "number",
+            "format": "double",
+            "description": "更新项目总包上限（可选）"
+          },
+          "scope_type": {
+            "type": "string",
+            "enum": ["company", "org", "team", "project"]
+          },
+          "parent_org_code": {
+            "type": "string"
+          },
+          "parent_org_budget": {
+            "type": "number",
+            "format": "double"
+          },
+          "parent_scope_type": {
+            "type": "string",
+            "enum": ["company", "org", "team"]
+          },
+          "remark": {
+            "type": "string"
+          }
+        }
+      },
+      "IssueTokenResult": {
+        "type": "object",
+        "properties": {
+          "token_apply_id": { "type": "integer" },
+          "user_id": { "type": "integer" },
+          "token_id": { "type": "integer" },
+          "token_key": { "type": "string" },
+          "token_name": { "type": "string" },
+          "remain_quota": { "type": "integer" }
+        }
+      },
+      "UpdateTokenResult": {
+        "type": "object",
+        "properties": {
+          "token_apply_id": { "type": "integer" },
+          "token_id": { "type": "integer" },
+          "amount": { "type": "number", "format": "double" },
+          "remain_quota": { "type": "integer" }
+        }
+      },
+      "ApiEnvelope": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" },
+          "message": { "type": "string" },
+          "data": {}
+        }
+      },
+      "IssueTokenResponse": {
+        "allOf": [
+          { "$ref": "#/components/schemas/ApiEnvelope" },
+          {
+            "type": "object",
+            "properties": {
+              "data": { "$ref": "#/components/schemas/IssueTokenResult" }
+            }
+          }
+        ]
+      },
+      "UpdateTokenResponse": {
+        "allOf": [
+          { "$ref": "#/components/schemas/ApiEnvelope" },
+          {
+            "type": "object",
+            "properties": {
+              "data": { "$ref": "#/components/schemas/UpdateTokenResult" }
+            }
+          }
+        ]
+      },
+      "SuccessNullDataResponse": {
+        "allOf": [
+          { "$ref": "#/components/schemas/ApiEnvelope" },
+          {
+            "type": "object",
+            "properties": {
+              "data": { "nullable": true }
+            }
+          }
+        ]
+      },
+      "EmptyBody": {
+        "type": "object",
+        "description": "鉴权失败时可能无 JSON 响应体"
+      }
+    }
+  },
+  "security": [
+    {
+      "TokenApplyApiKey": []
+    }
+  ]
+}

@@ -57,6 +57,7 @@ export default function SettingsSidebarModulesAdmin(props) {
       enabled: true,
       topup: true,
       personal: true,
+      token_apply: true,
     },
     admin: {
       enabled: true,
@@ -118,6 +119,7 @@ export default function SettingsSidebarModulesAdmin(props) {
         enabled: true,
         topup: true,
         personal: true,
+        token_apply: true,
       },
       admin: {
         enabled: true,
@@ -187,7 +189,7 @@ export default function SettingsSidebarModulesAdmin(props) {
             midjourney: true,
             task: true,
           },
-          personal: { enabled: true, topup: true, personal: true },
+          personal: { enabled: true, topup: true, personal: true, token_apply: true },
           admin: {
             enabled: true,
             channel: true,
@@ -241,6 +243,11 @@ export default function SettingsSidebarModulesAdmin(props) {
       description: t('用户个人功能'),
       modules: [
         { key: 'topup', title: t('钱包管理'), description: t('余额充值管理') },
+        {
+          key: 'token_apply',
+          title: t('部门额度'),
+          description: t('查看本部门令牌申请与额度使用情况'),
+        },
         {
           key: 'personal',
           title: t('个人设置'),

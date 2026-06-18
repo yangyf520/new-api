@@ -43,6 +43,7 @@ export const DEFAULT_ADMIN_CONFIG = {
     enabled: true,
     topup: true,
     personal: true,
+    token_apply: true,
   },
   admin: {
     enabled: true,
@@ -65,12 +66,20 @@ export const mergeAdminConfig = (savedConfig) => {
   for (const [sectionKey, sectionConfig] of Object.entries(savedConfig)) {
     if (!sectionConfig || typeof sectionConfig !== 'object') continue;
 
+    const defaultSection = DEFAULT_ADMIN_CONFIG[sectionKey] || {};
+
     if (!merged[sectionKey]) {
-      merged[sectionKey] = { ...sectionConfig };
+      merged[sectionKey] = { ...defaultSection, ...sectionConfig };
       continue;
     }
 
-    merged[sectionKey] = { ...merged[sectionKey], ...sectionConfig };
+    merged[sectionKey] = { ...defaultSection, ...merged[sectionKey], ...sectionConfig };
+
+    Object.keys(defaultSection).forEach((moduleKey) => {
+      if (merged[sectionKey][moduleKey] === undefined) {
+        merged[sectionKey][moduleKey] = defaultSection[moduleKey];
+      }
+    });
   }
 
   return merged;

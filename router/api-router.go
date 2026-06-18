@@ -3,6 +3,7 @@ package router
 import (
 	"github.com/QuantumNous/new-api/controller"
 	"github.com/QuantumNous/new-api/middleware"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 
 	// Import oauth package to register providers via init()
 	_ "github.com/QuantumNous/new-api/oauth"
@@ -60,6 +61,20 @@ func SetApiRouter(router *gin.Engine) {
 		// :env separates test vs prod URLs so the operator can register each
 		// in Pancake's matching webhook slot; handler enforces env match.
 		apiRouter.POST("/waffo-pancake/webhook/:env", anonymousRequestBodyLimit, controller.WaffoPancakeWebhook)
+
+		tokenApplyAuth := middleware.ApiKeyAuth(operation_setting.TokenApplyEnabled, operation_setting.EffectiveTokenApplyApiKey)
+		apiRouter.POST("/token-apply", tokenApplyAuth, anonymousRequestBodyLimit, controller.IssueToken)
+		apiRouter.PUT("/token-apply/:id", tokenApplyAuth, anonymousRequestBodyLimit, controller.UpdateIssuedToken)
+
+		taRead := apiRouter.Group("/token-apply")
+		taRead.Use(middleware.UserAuth())
+		{
+			taRead.GET("/records", controller.PortalListTokenApplications)
+			taRead.GET("/records/:id/token", controller.PortalGetApplicationToken)
+			taRead.GET("/records/:id", controller.PortalGetTokenApplication)
+			taRead.GET("/budget", controller.PortalListBudgetPolicies)
+			taRead.GET("/consumption", controller.PortalListTokenSpendPolicies)
+		}
 
 		// Universal secure verification routes
 		apiRouter.POST("/verify", middleware.UserAuth(), middleware.CriticalRateLimit(), controller.UniversalVerify)

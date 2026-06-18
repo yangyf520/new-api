@@ -35,6 +35,8 @@ import Channel from './pages/Channel';
 import Token from './pages/Token';
 import Redemption from './pages/Redemption';
 import TopUp from './pages/TopUp';
+import TokenApply from './pages/TokenApply';
+import TokenApplyDetail from './pages/TokenApply/Detail';
 import Log from './pages/Log';
 import Chat from './pages/Chat';
 import Chat2Link from './pages/Chat2Link';
@@ -274,6 +276,22 @@ function App() {
               <Suspense fallback={<Loading></Loading>} key={location.pathname}>
                 <TopUp />
               </Suspense>
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path='/console/token-apply/:id'
+          element={
+            <PrivateRoute>
+              <TokenApplyDetail />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path='/console/token-apply'
+          element={
+            <PrivateRoute>
+              <TokenApply />
             </PrivateRoute>
           }
         />

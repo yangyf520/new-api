@@ -120,6 +120,10 @@ export function SidebarModulesSection({
         title: t('Wallet'),
         description: t('Top up balance and view billing history.'),
       },
+      token_apply: {
+        title: t('Department Quota'),
+        description: t('View department token applications and quota usage.'),
+      },
       personal: {
         title: t('Profile'),
         description: t('Personal settings and profile management.'),

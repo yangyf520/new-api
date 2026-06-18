@@ -31,6 +31,7 @@ services:
       - REDIS_CONN_STRING=redis://redis
       - TZ=Asia/Shanghai
       - BATCH_UPDATE_ENABLED=true
+      - TOKEN_API_KEY=  # 自动化令牌发放 API 密钥；配置非空即启用
     depends_on:
       redis:
         condition: service_started

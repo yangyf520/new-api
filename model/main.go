@@ -254,6 +254,17 @@ func migrateDB() error {
 	if err := migrateTokenModelLimitsToText(); err != nil {
 		return err
 	}
+	// Keep token-apply tables names consistent (token_* prefix).
+	// This runs before AutoMigrate so we can preserve existing data.
+	if err := migrateTokenApplyTableNames(); err != nil {
+		return err
+	}
+	if err := migrateTokenApplySettingKey(); err != nil {
+		return err
+	}
+	if err := migrateTokenApplyLogApplicationIdColumn(); err != nil {
+		return err
+	}
 
 	err := DB.AutoMigrate(
 		&Channel{},
@@ -281,9 +292,16 @@ func migrateDB() error {
 		&CustomOAuthProvider{},
 		&UserOAuthBinding{},
 		&PerfMetric{},
+		&TokenApplyRecord{},
+		&TokenApplyLog{},
+		&TokenBudgetPolicy{},
+		&TokenSpendPolicy{},
 	)
 	if err != nil {
 		return err
+	}
+	if err := ValidateAllTokenBudgetPolicies(); err != nil {
+		return fmt.Errorf("token_budget_policies 数据校验失败: %w", err)
 	}
 	if common.UsingSQLite {
 		if err := ensureSubscriptionPlanTableSQLite(); err != nil {
@@ -300,6 +318,15 @@ func migrateDB() error {
 func migrateDBFast() error {
 
 	var wg sync.WaitGroup
+
+	// Keep token-apply tables names consistent (token_* prefix).
+	// This runs before AutoMigrate so we can preserve existing data.
+	if err := migrateTokenApplyTableNames(); err != nil {
+		return err
+	}
+	if err := migrateTokenApplySettingKey(); err != nil {
+		return err
+	}
 
 	migrations := []struct {
 		model interface{}
@@ -330,6 +357,10 @@ func migrateDBFast() error {
 		{&CustomOAuthProvider{}, "CustomOAuthProvider"},
 		{&UserOAuthBinding{}, "UserOAuthBinding"},
 		{&PerfMetric{}, "PerfMetric"},
+		{&TokenApplyRecord{}, "TokenApplyRecord"},
+		{&TokenApplyLog{}, "TokenApplyLog"},
+		{&TokenBudgetPolicy{}, "TokenBudgetPolicy"},
+		{&TokenSpendPolicy{}, "TokenSpendPolicy"},
 	}
 	// 动态计算migration数量，确保errChan缓冲区足够大
 	errChan := make(chan error, len(migrations))
@@ -365,6 +396,60 @@ func migrateDBFast() error {
 	}
 	common.SysLog("database migrated")
 	return nil
+}
+
+// migrateTokenApplyTableNames renames legacy token-apply related tables (see renames list).
+// It is safe to run multiple times (idempotent).
+func migrateTokenApplyTableNames() error {
+	type renameItem struct {
+		from string
+		to   string
+	}
+	renames := []renameItem{
+		{from: "token_applications", to: "token_apply_records"},
+		{from: "token_apply_records", to: "token_apply_records"},
+		{from: "token_application_logs", to: "token_apply_logs"},
+		{from: "token_apply_logs", to: "token_apply_logs"},
+		{from: "token_apply_budget_policies", to: "token_budget_policies"},
+		{from: "budget_policies", to: "token_budget_policies"},
+		{from: "token_budget_policies", to: "token_budget_policies"},
+		{from: "token_apply_spend_cap_policies", to: "token_spend_policies"},
+		{from: "consumption_policies", to: "token_spend_policies"},
+		{from: "token_spend_cap_policies", to: "token_spend_policies"},
+		{from: "token_spend_policies", to: "token_spend_policies"},
+		{from: "token_apply_spend_counters", to: "token_spend_counters"},
+		{from: "consumption_counters", to: "token_spend_counters"},
+		{from: "token_spend_counters", to: "token_spend_counters"},
+	}
+	for _, item := range renames {
+		fromExists := DB.Migrator().HasTable(item.from)
+		toExists := DB.Migrator().HasTable(item.to)
+		if fromExists && !toExists {
+			if err := DB.Migrator().RenameTable(item.from, item.to); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// migrateTokenApplySettingKey renames options key token_apply_setting → token_apply_setting.
+func migrateTokenApplySettingKey() error {
+	if !common.IsMasterNode {
+		return nil
+	}
+	if !DB.Migrator().HasTable(&Option{}) {
+		return nil
+	}
+	var applyCount int64
+	if err := DB.Model(&Option{}).Where(commonKeyCol+" = ?", "token_apply_setting").Count(&applyCount).Error; err != nil {
+		return err
+	}
+	if applyCount > 0 {
+		return nil
+	}
+	return DB.Model(&Option{}).Where(commonKeyCol+" = ?", "token_apply_setting").
+		Update(commonKeyCol, "token_apply_setting").Error
 }
 
 func migrateLOGDB() error {

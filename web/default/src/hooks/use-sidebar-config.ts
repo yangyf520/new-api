@@ -53,6 +53,7 @@ const DEFAULT_SIDEBAR_MODULES: SidebarModulesAdminConfig = {
     enabled: true,
     topup: true,
     personal: true,
+    token_apply: true,
   },
   admin: {
     enabled: true,
@@ -84,6 +85,14 @@ const mergeWithDefaultSidebarModules = (
           merged[sectionKey][moduleKey] = defaultSection[moduleKey]
         }
       })
+      // legacy sidebar key token_apply → token_apply
+      if (
+        sectionKey === 'personal' &&
+        merged[sectionKey].token_apply === undefined &&
+        merged[sectionKey].token_apply !== undefined
+      ) {
+        merged[sectionKey].token_apply = merged[sectionKey].token_apply
+      }
     }
   )
 
@@ -105,6 +114,9 @@ const URL_TO_CONFIG_MAP: Record<string, { section: string; module: string }> = {
   '/usage-logs/drawing': { section: 'console', module: 'midjourney' },
   '/usage-logs/task': { section: 'console', module: 'task' },
   '/wallet': { section: 'personal', module: 'topup' },
+  '/token-apply': { section: 'personal', module: 'token_apply' },
+  '/token-apply/budget': { section: 'personal', module: 'token_apply' },
+  '/token-apply/consumption': { section: 'personal', module: 'token_apply' },
   '/profile': { section: 'personal', module: 'personal' },
   '/channels': { section: 'admin', module: 'channel' },
   '/models': { section: 'admin', module: 'models' },
