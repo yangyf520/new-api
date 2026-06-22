@@ -29,12 +29,12 @@ function applicationCurrencyFractionDigits(currency = 'CNY') {
   }
 }
 
-export function formatMoneyNumber(value, currency = 'CNY') {
+export function formatMoneyNumber(value, currency = 'CNY', fractionDigits) {
   const n = Number(value);
   if (!Number.isFinite(n)) {
     return String(value);
   }
-  const digits = applicationCurrencyFractionDigits(currency);
+  const digits = fractionDigits ?? applicationCurrencyFractionDigits(currency);
   const factor = 10 ** digits;
   const rounded = Math.round(n * factor) / factor;
   return rounded.toLocaleString(undefined, {
@@ -43,13 +43,17 @@ export function formatMoneyNumber(value, currency = 'CNY') {
   });
 }
 
-export function formatValueWithUnit(value, unit, { formatNumber = false, prefix = '' } = {}) {
+export function formatValueWithUnit(
+  value,
+  unit,
+  { formatNumber = false, prefix = '', fractionDigits } = {},
+) {
   if (value == null || value === '') {
     return '-';
   }
   const display = formatNumber
     ? Number(value).toLocaleString()
-    : `${prefix}${formatMoneyNumber(value, unit)}`;
+    : `${prefix}${formatMoneyNumber(value, unit, fractionDigits)}`;
   if (!unit) {
     return display;
   }

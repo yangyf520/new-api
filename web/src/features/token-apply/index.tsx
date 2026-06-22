@@ -212,7 +212,8 @@ function policyTreeColumns<T extends PolicyRow>(
 function currencyColumn<T extends { currency?: string }>(
   t: (key: string) => string,
   headerKey: string,
-  accessor: keyof T
+  accessor: keyof T,
+  fractionDigits?: number
 ): ColumnDef<T> {
   return {
     accessorKey: accessor as string,
@@ -220,7 +221,8 @@ function currencyColumn<T extends { currency?: string }>(
     cell: ({ row }) =>
       formatCurrencyAmount(
         row.original[accessor] as number,
-        rowCurrency(row.original)
+        rowCurrency(row.original),
+        { fractionDigits }
       ),
   }
 }
@@ -427,9 +429,9 @@ function ConsumptionPoliciesSection() {
   const columns = useMemo<ColumnDef<ConsumptionPolicyRow>[]>(
     () => [
       ...(policyTreeColumns<ConsumptionPolicyRow>(t) as ColumnDef<ConsumptionPolicyRow>[]),
-      currencyColumn(t, 'Cap Amount', 'cap_amount'),
-      currencyColumn(t, 'Used Amount', 'used_amount'),
-      currencyColumn(t, 'Remaining Amount', 'remaining_amount'),
+      currencyColumn(t, 'Cap Amount', 'cap_amount', 4),
+      currencyColumn(t, 'Used Amount', 'used_amount', 4),
+      currencyColumn(t, 'Remaining Amount', 'remaining_amount', 4),
     ],
     [t]
   )

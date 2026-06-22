@@ -239,10 +239,11 @@ const TokenApply = () => {
     [t],
   );
 
-  const currencyAmountCol = (titleKey, dataIndex) => ({
+  const currencyAmountCol = (titleKey, dataIndex, fractionDigits) => ({
     title: t(titleKey),
     dataIndex,
-    render: (value, row) => formatCurrencyAmount(value, rowCurrency(row)),
+    render: (value, row) =>
+      formatCurrencyAmount(value, rowCurrency(row), { fractionDigits }),
   });
 
   const budgetColumns = useMemo(
@@ -258,9 +259,9 @@ const TokenApply = () => {
   const consumptionColumns = useMemo(
     () => [
       ...policyTreeBaseColumns,
-      currencyAmountCol('封顶额度', 'cap_amount'),
-      currencyAmountCol('已用额度', 'used_amount'),
-      currencyAmountCol('剩余额度', 'remaining_amount'),
+      currencyAmountCol('封顶额度', 'cap_amount', 4),
+      currencyAmountCol('已用额度', 'used_amount', 4),
+      currencyAmountCol('剩余额度', 'remaining_amount', 4),
     ],
     [policyTreeBaseColumns, t],
   );
