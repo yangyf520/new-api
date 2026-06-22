@@ -13,6 +13,8 @@ import { quotaToApplicationAmount } from '@/lib/quota-application'
 type FormatOptions = {
   formatNumber?: boolean
   prefix?: string
+  /** Default 2; use 4 for token_spend_policies amounts (backend decimal 12,4). */
+  fractionDigits?: number
 }
 
 function normalizeApplicationCurrency(currency = 'CNY'): string {
@@ -33,13 +35,15 @@ function applicationCurrencyFractionDigits(currency = 'CNY'): number {
 
 export function formatMoneyNumber(
   value: number | string,
-  currency = 'CNY'
+  currency = 'CNY',
+  fractionDigits?: number
 ): string {
   const n = Number(value)
   if (!Number.isFinite(n)) {
     return String(value)
   }
-  const digits = applicationCurrencyFractionDigits(currency)
+  const digits =
+    fractionDigits ?? applicationCurrencyFractionDigits(currency)
   const factor = 10 ** digits
   const rounded = Math.round(n * factor) / factor
   return rounded.toLocaleString(undefined, {
@@ -58,7 +62,11 @@ export function formatValueWithUnit(
   }
   const display = options.formatNumber
     ? Number(value).toLocaleString()
-    : `${options.prefix ?? ''}${formatMoneyNumber(value as number | string, unit)}`
+    : `${options.prefix ?? ''}${formatMoneyNumber(
+        value as number | string,
+        unit,
+        options.fractionDigits
+      )}`
   if (!unit) {
     return display
   }
