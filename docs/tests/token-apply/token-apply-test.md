@@ -208,7 +208,7 @@ E2E 首笔发放时在 POST body 中携带：
 | A-11 | unlimited | 见 M-13、M-14 | 见 M-13、M-14 | e2e |
 | A-12 | project 发放 | 带 `project_code` + `project_budget` | 见 M-15 | e2e |
 | A-13 | 总包随申请同步 | 首笔 POST 带 `org_budget` / `parent_org_*` | `token_budget_policies` 有对应行；无 PUT budget API | e2e |
-| A-14 | 消耗策略同步 | POST/PUT token-apply 带 `org_consumption_cap` | Portal 可见策略；Relay 按 cap 拦截 | e2e 部分 |
+| A-14 | 消耗策略同步 | POST/PUT token-apply 带 `cap_amount` | Portal 可见策略；Relay 按 cap 拦截 | e2e 部分 |
 | A-15 | 消耗 403 | 见 M-30 | 见 M-30 | e2e |
 | A-16 | token 消耗策略 | PUT `scope_type=token` | upsert 成功 | e2e |
 | A-17 | Relay | POST `/v1/chat/completions` | 见 M-31、M-32、M-40 | e2e |
@@ -220,7 +220,7 @@ E2E 首笔发放时在 POST body 中携带：
 | 步骤 | 场景 ID | 说明 |
 |:----:|---------|------|
 | 1 | PRE | 清库（§5 SQL） |
-| 2 | A-14 | 首笔发放时带 `org_consumption_cap`（同步写入③） |
+| 2 | A-14 | 首笔发放时带 `cap_amount`（同步写入③） |
 | 3 | A-01、A-13、M-01~03 | 首笔发放（含 `org_budget`）+ `token_budget_policies` 核对 |
 | 4 | A-02、M-19 | 发放幂等 |
 | 5 | A-10、M-10 | 预算拒绝 |

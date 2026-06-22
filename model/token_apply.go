@@ -151,8 +151,8 @@ type IssueTokenRequest struct {
 	OrgCode           string  `json:"org_code"`
 	OrgName           string  `json:"org_name"`
 	OrgBudget         float64 `json:"org_budget"`
-	OrgConsumptionCap float64 `json:"org_consumption_cap"`
-	ConsumePeriodType string  `json:"consume_period_type"`
+	CapAmount         float64 `json:"cap_amount"`
+	PeriodType        string  `json:"period_type"`
 	ProjectCode       string  `json:"project_code"`
 	ProjectBudget     float64 `json:"project_budget"`
 	TokenType         string  `json:"token_type"`
@@ -174,8 +174,8 @@ type UpdateTokenRequest struct {
 	Amount           float64 `json:"amount"`
 	Currency         string  `json:"currency"`
 	OrgBudget        float64 `json:"org_budget"`
-	OrgConsumptionCap float64 `json:"org_consumption_cap"`
-	ConsumePeriodType string  `json:"consume_period_type"`
+	CapAmount         float64 `json:"cap_amount"`
+	PeriodType        string  `json:"period_type"`
 	ProjectBudget    float64 `json:"project_budget"`
 	ScopeType        string  `json:"scope_type"`
 	ParentOrgCode    string  `json:"parent_org_code"`
@@ -939,11 +939,11 @@ func validateIssueTokenRequestEnums(req *IssueTokenRequest) error {
 	}
 	req.ParentScopeType = parentScopeType
 
-	periodType, err := parseConsumePeriodType(req.ConsumePeriodType)
+	periodType, err := parsePeriodType(req.PeriodType)
 	if err != nil {
 		return err
 	}
-	req.ConsumePeriodType = periodType
+	req.PeriodType = periodType
 	return nil
 }
 
@@ -965,12 +965,12 @@ func validateUpdateTokenRequestEnums(req *UpdateTokenRequest) error {
 		}
 		req.ParentScopeType = lower
 	}
-	if s := strings.TrimSpace(req.ConsumePeriodType); s != "" {
+	if s := strings.TrimSpace(req.PeriodType); s != "" {
 		lower := strings.ToLower(s)
 		if _, ok := allowedTokenSpendPeriodTypes[lower]; !ok {
-			return fmt.Errorf("consume_period_type 格式无效，仅支持 day、week、month、none")
+			return fmt.Errorf("period_type 格式无效，仅支持 day、week、month、none")
 		}
-		req.ConsumePeriodType = lower
+		req.PeriodType = lower
 	}
 	return nil
 }
@@ -1042,13 +1042,13 @@ func parseParentScopeType(raw string) (string, error) {
 	return s, nil
 }
 
-func parseConsumePeriodType(raw string) (string, error) {
+func parsePeriodType(raw string) (string, error) {
 	raw = strings.TrimSpace(strings.ToLower(raw))
 	if raw == "" {
 		return "month", nil
 	}
 	if _, ok := allowedTokenSpendPeriodTypes[raw]; !ok {
-		return "", fmt.Errorf("consume_period_type 格式无效，仅支持 day、week、month、none")
+		return "", fmt.Errorf("period_type 格式无效，仅支持 day、week、month、none")
 	}
 	return raw, nil
 }
