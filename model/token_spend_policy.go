@@ -101,8 +101,8 @@ func syncTokenSpendPoliciesFromIssue(tx *gorm.DB, req *IssueTokenRequest, tokenT
 	if req == nil {
 		return nil
 	}
-	capAmount := common.RoundDecimal(req.OrgConsumptionCap)
-	periodType := normalizeTokenSpendPeriodType(req.ConsumePeriodType)
+	capAmount := common.RoundDecimal(req.CapAmount)
+	periodType := normalizeTokenSpendPeriodType(req.PeriodType)
 	if capAmount <= 0 || periodType == TokenSpendPolicyPeriodNone {
 		return nil
 	}
@@ -126,15 +126,15 @@ func syncTokenSpendPoliciesFromUpdate(tx *gorm.DB, app *TokenApplyRecord, req *U
 	if app == nil || req == nil {
 		return nil
 	}
-	capAmount := common.RoundDecimal(req.OrgConsumptionCap)
-	periodType := normalizeTokenSpendPeriodType(req.ConsumePeriodType)
+	capAmount := common.RoundDecimal(req.CapAmount)
+	periodType := normalizeTokenSpendPeriodType(req.PeriodType)
 	if capAmount <= 0 || periodType == TokenSpendPolicyPeriodNone {
 		return nil
 	}
 	issueReq := &IssueTokenRequest{
 		OrgCode:           app.OrgCode,
-		OrgConsumptionCap: capAmount,
-		ConsumePeriodType: periodType,
+		CapAmount:  capAmount,
+		PeriodType:        periodType,
 		Currency:          firstNonEmpty(req.Currency, app.Currency),
 		TokenType:         app.TokenType,
 		ScopeType:         req.ScopeType,

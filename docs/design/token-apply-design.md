@@ -143,7 +143,7 @@ export TOKEN_KEY="sk-..."      # 发放响应中的 token_key，Relay 时用
 - **必填** — `ticket_no`、`email`、`org_code`；`user` 时加 `work_no`
 - **金额** — 默认 `quota_mode=fixed`，`amount` 必填（**分包**，本笔 Key 额度）
 - **总包（①）** — 可选 `org_budget`（部门审批总上限，自动 upsert `token_budget_policies`）；`project_budget` 在有 `project_code` 时设项目总包；`parent_org_code` + `parent_org_budget` 设上级总包
-- **消耗封顶（③）** — 可选 `org_consumption_cap` + `consume_period_type`（默认 `month`），自动 upsert `token_spend_policies`
+- **消耗封顶（③）** — 可选 `cap_amount` + `period_type`（默认 `month`），自动 upsert `token_spend_policies`
 - **scope** — `scope_type` 默认 `team`
 - **事务** — `users` + 台账 + `tokens` + 审计 + 总包同步 **同一事务**，失败全回滚
 
@@ -265,7 +265,7 @@ sequenceDiagram
 - **不可改** — `email`、`work_no`、`token_type`、首次 `ticket_no`
 - **并发** — `FOR UPDATE` 锁台账 + `tokens`
 
-**可选总包 / 消耗字段（增额时）** — `org_budget`、`project_budget`、`parent_org_code`、`parent_org_budget`、`org_consumption_cap`、`consume_period_type`、`scope_type`（语义同 §3.3 发放）
+**可选总包 / 消耗字段（增额时）** — `org_budget`、`project_budget`、`parent_org_code`、`parent_org_budget`、`cap_amount`、`period_type`、`scope_type`（语义同 §3.3 发放）
 
 <details>
 <summary><strong>curl 示例</strong></summary>
@@ -355,8 +355,8 @@ curl -sS -X PUT "${BASE_URL}/api/token-apply/${TOKEN_APPLY_ID}" \
 
 在 `POST /api/token-apply` 与 `PUT /api/token-apply/:id` 中可选携带：
 
-- `org_consumption_cap`：部门/团队本周期消耗封顶（元）
-- `consume_period_type`：`day` / `week` / `month` / `none`（默认 `month`）
+- `cap_amount`：部门/团队本周期消耗封顶（元）
+- `period_type`：`day` / `week` / `month` / `none`（默认 `month`）
 
 写入（upsert 键）：`(scope_type, org_code, token_type)` → `token_spend_policies`。
 
@@ -428,8 +428,8 @@ curl -sS -X PUT "${BASE_URL}/api/token-apply/${TOKEN_APPLY_ID}" \
 |------|------|------|
 | `scope_type` | `company` / `org` / `team` / `project` / `token` | 申请 `scope_type`（默认 `team`）或 token 级 |
 | `scope_code` | 精确匹配 | 申请 `org_code` 或 `token_id` |
-| `cap_amount` | 周期消耗上限（元） | 申请 `org_consumption_cap` |
-| `period_type` | `day` / `week` / `month` / `none` | 申请 `consume_period_type`（默认 `month`） |
+| `cap_amount` | 周期消耗上限（元） | 申请 `cap_amount` |
+| `period_type` | `day` / `week` / `month` / `none` | 申请 `period_type`（默认 `month`） |
 | `used_amount` | 当前 `period_key` 内已消耗（元） | Relay Reserve/Adjust/Release |
 | `period_key` | 当前周期键 | 同上；换期时 `used_amount` 归零 |
 | `parent_id` | 组织树 | 申请 `parent_org_code` 解析 |
@@ -635,7 +635,7 @@ flowchart TB
 
 ### 11.3 周期（仅 ③）
 
-| `consume_period_type` | ③ `period_key` 示例 |
+| `period_type` | ③ `period_key` 示例 |
 |-----------------------|---------------------|
 | `day` | `2025-06-13` |
 | `week` | `2025-W24` |
@@ -688,8 +688,8 @@ curl -sS -X POST "${BASE_URL}/api/token-apply" \
     "currency": "CNY",
     "org_code": "D001-T010",
     "org_name": "平台组",
-    "org_consumption_cap": 500,
-    "consume_period_type": "day",
+    "cap_amount": 500,
+    "period_type": "day",
     "token_type": "user",
     "work_no": "E10086",
     "user_name": "张三"
@@ -724,8 +724,8 @@ curl -sS -X POST "${BASE_URL}/api/token-apply" \
     "currency": "CNY",
     "org_code": "D001-T010",
     "org_budget": 30000,
-    "org_consumption_cap": 30000,
-    "consume_period_type": "month",
+    "cap_amount": 30000,
+    "period_type": "month",
     "token_type": "user",
     "work_no": "E10086"
   }'
@@ -748,8 +748,8 @@ curl -sS -X POST "${BASE_URL}/api/token-apply" \
     "currency": "CNY",
     "org_code": "D001-T010",
     "org_budget": 30000,
-    "org_consumption_cap": 500,
-    "consume_period_type": "day",
+    "cap_amount": 500,
+    "period_type": "day",
     "parent_org_code": "D001",
     "parent_org_budget": 100000,
     "token_type": "user",

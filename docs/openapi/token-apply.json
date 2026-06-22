@@ -51,8 +51,8 @@
                     "token_type": "user",
                     "quota_mode": "fixed",
                     "scope_type": "team",
-                    "org_consumption_cap": 500,
-                    "consume_period_type": "day",
+                    "cap_amount": 500,
+                    "period_type": "day",
                     "parent_org_code": "D001",
                     "parent_org_budget": 100000,
                     "parent_scope_type": "org",
@@ -149,8 +149,8 @@
                 "amount": 5000,
                 "currency": "CNY",
                 "org_budget": 50000,
-                "org_consumption_cap": 800,
-                "consume_period_type": "day",
+                "cap_amount": 800,
+                "period_type": "day",
                 "project_budget": 8000,
                 "scope_type": "team",
                 "parent_org_code": "D001",
@@ -255,12 +255,12 @@
             "format": "double",
             "description": "部门审批总上限（总包①，元），自动 upsert token_budget_policies"
           },
-          "org_consumption_cap": {
+          "cap_amount": {
             "type": "number",
             "format": "double",
             "description": "部门周期消耗封顶（元），自动 upsert token_spend_policies（③）"
           },
-          "consume_period_type": {
+          "period_type": {
             "type": "string",
             "description": "消耗封顶周期，默认 month",
             "default": "month",
@@ -356,12 +356,12 @@
             "format": "double",
             "description": "更新部门总包上限（可选）"
           },
-          "org_consumption_cap": {
+          "cap_amount": {
             "type": "number",
             "format": "double",
             "description": "更新部门消耗封顶（可选）"
           },
-          "consume_period_type": {
+          "period_type": {
             "type": "string",
             "enum": ["day", "week", "month", "none"],
             "description": "更新消耗封顶周期"

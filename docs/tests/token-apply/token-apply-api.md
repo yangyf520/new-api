@@ -47,8 +47,8 @@ curl -sS -X POST "${BASE_URL}/api/token-apply" \
     "org_code": "D001-T010",
     "org_name": "平台研发组",
     "org_budget": 30000,
-    "org_consumption_cap": 500,
-    "consume_period_type": "day",
+    "cap_amount": 500,
+    "period_type": "day",
     "project_code": "PRJ-2025-01",
     "project_budget": 5000,
     "token_type": "user",
@@ -77,13 +77,13 @@ curl -sS -X POST "${BASE_URL}/api/token-apply" \
 | `org_code` | ✓ | — | 部门/团队编码 |
 | `org_name` | | `""` | 部门名称 |
 | `org_budget` | | 不传则不建 | 部门审批总上限（元）→ 自动写入 `token_budget_policies` |
-| `org_consumption_cap` | | 不传则不建 | 部门周期消耗封顶（元）→ 自动写入 `token_spend_policies`（③） |
+| `cap_amount` | | 不传则不建 | 部门周期消耗封顶（元）→ 自动写入 `token_spend_policies`（③） |
 | `project_code` | | `""` | 项目编码 |
 | `project_budget` | | 不传则不建 | 项目审批总上限（元），需有 `project_code` |
 | `token_type` | | `user` | `user` 员工 / `app` 应用（Key 归 `app_user_email`） |
 | `quota_mode` | | `fixed` | `fixed` 计入审批预算；`unlimited` 不计入①但仍按 `amount` 设 Key 额度 |
 | `scope_type` | | `team` | 部门总包维度：`team` / `org` / `company` 等 |
-| `consume_period_type` | | `month` | 消耗封顶周期：`day` / `week` / `month` / `none` |
+| `period_type` | | `month` | 消耗封顶周期：`day` / `week` / `month` / `none` |
 | `parent_org_code` | | — | 上级组织编码 |
 | `parent_org_budget` | | — | 上级审批总上限（元） |
 | `parent_scope_type` | | `org` | 上级总包 `scope_type` |
@@ -145,8 +145,8 @@ curl -sS -X PUT "${BASE_URL}/api/token-apply/${TOKEN_APPLY_ID}" \
     "amount": 5000,
     "currency": "CNY",
     "org_budget": 50000,
-    "org_consumption_cap": 800,
-    "consume_period_type": "day",
+    "cap_amount": 800,
+    "period_type": "day",
     "project_budget": 8000,
     "scope_type": "team",
     "parent_org_code": "D001",
@@ -165,10 +165,10 @@ curl -sS -X PUT "${BASE_URL}/api/token-apply/${TOKEN_APPLY_ID}" \
 | `amount` | ✓ | 变更后**总**审批额（元），非增量 |
 | `currency` | | 默认沿用台账币种 |
 | `org_budget` | | 更新部门总包（可选） |
-| `org_consumption_cap` | | 更新部门消耗封顶（可选） |
+| `cap_amount` | | 更新部门消耗封顶（可选） |
 | `project_budget` | | 更新项目总包（可选） |
 | `scope_type` | | 更新部门总包维度 |
-| `consume_period_type` | | 更新消耗封顶周期 |
+| `period_type` | | 更新消耗封顶周期 |
 | `parent_org_code` | | 更新上级组织 |
 | `parent_org_budget` | | 更新上级总包 |
 | `parent_scope_type` | | 上级 scope 类型 |
