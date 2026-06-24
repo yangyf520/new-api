@@ -47,6 +47,10 @@ COPY --from=builder-classic /build/web/classic/dist ./web/classic/dist
 RUN go build -ldflags "-s -w -X 'github.com/QuantumNous/new-api/common.Version=$(cat VERSION)'" -o new-api
 
 FROM harbor.sensetime.com/infra/debian:bookworm-slimv1
+ENV http_proxy=http://proxy-sh.sensetime.com:3128
+ENV https_proxy=http://proxy-sh.sensetime.com:3128
+ENV HTTP_PROXY=http://proxy-sh.sensetime.com:3128
+ENV HTTPS_PROXY=http://proxy-sh.sensetime.com:3128
 
 RUN sed -i 's|http://deb.debian.org|http://mirrors.aliyun.com|g' \
     /etc/apt/sources.list.d/debian.sources  && apt-get update \
