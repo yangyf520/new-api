@@ -186,7 +186,7 @@ curl -sS -X POST "${BASE_URL}/api/token-apply" \
 }
 ```
 
-**应用令牌（`token_type=app`，Key 归 `app_user_email`）**
+**应用令牌（`token_type=app`，Key 归申请 `email`）**
 
 ```bash
 curl -sS -X POST "${BASE_URL}/api/token-apply" \
@@ -327,7 +327,7 @@ curl -sS -X PUT "${BASE_URL}/api/token-apply/${TOKEN_APPLY_ID}" \
 ### 3.5 令牌类型
 
 - **`user`**（默认）— Key 归属 `email` 对应用户
-- **`app`** — Key 归属 `token_apply_setting.app_user_email`
+- **`app`** — Key 归属申请 `email` 对应用户
 
 `user` / `app` 在策略里**分开统计**。
 

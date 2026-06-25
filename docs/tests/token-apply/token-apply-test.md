@@ -46,7 +46,7 @@ docs/tests/
 | E-03 | 数据库 | `.env` 里 `SQL_DSN`（`postgres://...` 可直接给 `psql`） |
 | E-03b | psql | 客户端已安装（`brew install libpq`） |
 | E-04 | BASE_URL | 建议显式 `export BASE_URL=http://127.0.0.1:3000` |
-| E-05 | app 令牌 | 运营设置 `app_user_email` 指向已存在用户 |
+| E-05 | app 令牌 | `token_type=app` 时请求体需提供有效 `email` |
 | E-06 | Relay | 至少 1 个 **status=1** 的 channel + 可用模型（计费用例必需） |
 | E-07 | 门户 | `TI_PORTAL_ADMIN_*`（默认 root/123456）；`TI_PORTAL_DEPT_*` 为**已注册用户**（E2E 用 psql 设 `group=D001-T010`） |
 | E-08 | 汇率 | 确认 `AmountToQuota` 所用汇率配置稳定（CNY 用例以 3000 元为基准） |
@@ -197,7 +197,7 @@ E2E 首笔发放时在 POST body 中携带：
 |----|------|------|------|:------:|
 | A-01 | 员工发放 | POST `token_type=user` + `work_no` | `token_apply_id`、`token_key`、`user_id` | e2e |
 | A-02 | 发放幂等 | 同 `ticket_no` 再 POST | 同 ID/Key；日志不增 | e2e |
-| A-03 | app 发放 | `token_type=app` | Key 归 `app_user_email` 对应用户 | e2e 待补 |
+| A-03 | app 发放 | `token_type=app` | Key 归申请 `email` 对应用户 | e2e 待补 |
 | A-04 | 无 Api-Key | 不带 `X-Api-Key` | HTTP **401** | e2e 待补 |
 | A-05 | 必填校验 | 缺 `ticket_no` / `work_no` | `success:false` | 手工 |
 | A-06 | 增额 | PUT `amount` 变大 | 见 M-20、M-11 | e2e |

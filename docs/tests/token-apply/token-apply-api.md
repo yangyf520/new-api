@@ -80,7 +80,7 @@ curl -sS -X POST "${BASE_URL}/api/token-apply" \
 | `cap_amount` | | 不传则不建 | 部门周期消耗封顶（元）→ 自动写入 `token_spend_policies`（③） |
 | `project_code` | | `""` | 项目编码 |
 | `project_budget` | | 不传则不建 | 项目审批总上限（元），需有 `project_code` |
-| `token_type` | | `user` | `user` 员工 / `app` 应用（Key 归 `app_user_email`） |
+| `token_type` | | `user` | `user` 员工 / `app` 应用（Key 归申请 `email`） |
 | `quota_mode` | | `fixed` | `fixed` 计入审批预算；`unlimited` 不计入①但仍按 `amount` 设 Key 额度 |
 | `scope_type` | | `team` | 部门总包维度：`team` / `org` / `company` 等 |
 | `period_type` | | `month` | 消耗封顶周期：`day` / `week` / `month` / `none` |

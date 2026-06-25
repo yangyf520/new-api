@@ -21,10 +21,10 @@ const (
 	TokenApplyQuotaModeFixed     = "fixed"
 	TokenApplyQuotaModeUnlimited = "unlimited"
 
-	TokenApplyLogActionIssue     = "issue"
-	TokenApplyLogActionIncrease  = "increase"
-	TokenApplyLogActionDecrease  = "decrease"
-	TokenApplyLogActionAdjust    = "adjust"
+	TokenApplyLogActionIssue    = "issue"
+	TokenApplyLogActionIncrease = "increase"
+	TokenApplyLogActionDecrease = "decrease"
+	TokenApplyLogActionAdjust   = "adjust"
 
 	maxIssueTokenNameLen = 50
 )
@@ -143,61 +143,61 @@ func ResolveTokenApplyIdByTokenId(tokenId int) int {
 }
 
 type IssueTokenRequest struct {
-	TicketNo          string  `json:"ticket_no"`
-	RecordId          string  `json:"record_id"`
-	Email             string  `json:"email"`
-	Amount            float64 `json:"amount"`
-	Currency          string  `json:"currency"`
-	OrgCode           string  `json:"org_code"`
-	OrgName           string  `json:"org_name"`
-	OrgBudget         float64 `json:"org_budget"`
-	CapAmount         float64 `json:"cap_amount"`
-	PeriodType        string  `json:"period_type"`
-	ProjectCode       string  `json:"project_code"`
-	ProjectBudget     float64 `json:"project_budget"`
-	TokenType         string  `json:"token_type"`
-	QuotaMode         string  `json:"quota_mode"`
-	ScopeType         string  `json:"scope_type"`
-	ParentOrgCode     string  `json:"parent_org_code"`
-	ParentOrgBudget   float64 `json:"parent_org_budget"`
-	ParentScopeType   string  `json:"parent_scope_type"`
-	UserName          string  `json:"user_name"`
-	WorkNo            string  `json:"work_no"`
-	TokenName         string  `json:"token_name"`
-	TokenGroup        string  `json:"token_group"`
-	Remark            string  `json:"remark"`
+	TicketNo        string  `json:"ticket_no"`
+	RecordId        string  `json:"record_id"`
+	Email           string  `json:"email"`
+	Amount          float64 `json:"amount"`
+	Currency        string  `json:"currency"`
+	OrgCode         string  `json:"org_code"`
+	OrgName         string  `json:"org_name"`
+	OrgBudget       float64 `json:"org_budget"`
+	CapAmount       float64 `json:"cap_amount"`
+	PeriodType      string  `json:"period_type"`
+	ProjectCode     string  `json:"project_code"`
+	ProjectBudget   float64 `json:"project_budget"`
+	TokenType       string  `json:"token_type"`
+	QuotaMode       string  `json:"quota_mode"`
+	ScopeType       string  `json:"scope_type"`
+	ParentOrgCode   string  `json:"parent_org_code"`
+	ParentOrgBudget float64 `json:"parent_org_budget"`
+	ParentScopeType string  `json:"parent_scope_type"`
+	UserName        string  `json:"user_name"`
+	WorkNo          string  `json:"work_no"`
+	TokenName       string  `json:"token_name"`
+	TokenGroup      string  `json:"token_group"`
+	Remark          string  `json:"remark"`
 }
 
 type UpdateTokenRequest struct {
-	ChangeTicketNo   string  `json:"change_ticket_no"`
-	RecordId         string  `json:"record_id"`
-	Amount           float64 `json:"amount"`
-	Currency         string  `json:"currency"`
-	OrgBudget        float64 `json:"org_budget"`
-	CapAmount         float64 `json:"cap_amount"`
-	PeriodType        string  `json:"period_type"`
-	ProjectBudget    float64 `json:"project_budget"`
-	ScopeType        string  `json:"scope_type"`
-	ParentOrgCode    string  `json:"parent_org_code"`
-	ParentOrgBudget  float64 `json:"parent_org_budget"`
-	ParentScopeType  string  `json:"parent_scope_type"`
-	Remark           string  `json:"remark"`
+	ChangeTicketNo  string  `json:"change_ticket_no"`
+	RecordId        string  `json:"record_id"`
+	Amount          float64 `json:"amount"`
+	Currency        string  `json:"currency"`
+	OrgBudget       float64 `json:"org_budget"`
+	CapAmount       float64 `json:"cap_amount"`
+	PeriodType      string  `json:"period_type"`
+	ProjectBudget   float64 `json:"project_budget"`
+	ScopeType       string  `json:"scope_type"`
+	ParentOrgCode   string  `json:"parent_org_code"`
+	ParentOrgBudget float64 `json:"parent_org_budget"`
+	ParentScopeType string  `json:"parent_scope_type"`
+	Remark          string  `json:"remark"`
 }
 
 type IssueTokenResult struct {
 	TokenApplyId int    `json:"token_apply_id"`
 	UserId       int    `json:"user_id"`
-	TokenId       int    `json:"token_id"`
-	TokenKey      string `json:"token_key"`
-	TokenName     string `json:"token_name"`
-	RemainQuota   int    `json:"remain_quota"`
+	TokenId      int    `json:"token_id"`
+	TokenKey     string `json:"token_key"`
+	TokenName    string `json:"token_name"`
+	RemainQuota  int    `json:"remain_quota"`
 }
 
 type UpdateTokenResult struct {
 	TokenApplyId int     `json:"token_apply_id"`
 	TokenId      int     `json:"token_id"`
-	Amount        float64 `json:"amount"`
-	RemainQuota   int     `json:"remain_quota"`
+	Amount       float64 `json:"amount"`
+	RemainQuota  int     `json:"remain_quota"`
 }
 
 func GetTokenApplyRecordByTicketNo(ticketNo string) (*TokenApplyRecord, error) {
@@ -281,13 +281,6 @@ func IssueTokenApplication(req *IssueTokenRequest) (*IssueTokenResult, error) {
 	// unlimited 仅表示不计入 ① 审批预算；② 总包仍由 amount 换算为 Key 额度。
 
 	ownerEmail := req.Email
-	if tokenType == TokenApplyTypeApp {
-		appEmail := strings.TrimSpace(operation_setting.GetTokenApplySetting().AppUserEmail)
-		if appEmail == "" {
-			return nil, errors.New("未配置 app_user_email")
-		}
-		ownerEmail = appEmail
-	}
 
 	result := &IssueTokenResult{}
 	err = DB.Transaction(func(tx *gorm.DB) error {
@@ -354,9 +347,9 @@ func IssueTokenApplication(req *IssueTokenRequest) (*IssueTokenResult, error) {
 			WorkNo:      strings.TrimSpace(req.WorkNo),
 			TokenGroup:  tokenGroup,
 			Remark:      strings.TrimSpace(req.Remark),
-			Status:     TokenApplyStatusIssued,
-			IssuedTime: now,
-			CreatedAt:  now,
+			Status:      TokenApplyStatusIssued,
+			IssuedTime:  now,
+			CreatedAt:   now,
 		}
 		if err := tx.Create(app).Error; err != nil {
 			return err
@@ -500,10 +493,10 @@ func UpdateTokenApplication(tokenApplyId int, req *UpdateTokenRequest) (*UpdateT
 		}
 
 		if err := tx.Model(app).Updates(map[string]interface{}{
-			"amount":     req.Amount,
-			"quota":      newQuota,
-			"record_id":  strings.TrimSpace(req.RecordId),
-			"remark":     strings.TrimSpace(req.Remark),
+			"amount":    req.Amount,
+			"quota":     newQuota,
+			"record_id": strings.TrimSpace(req.RecordId),
+			"remark":    strings.TrimSpace(req.Remark),
 		}).Error; err != nil {
 			return err
 		}
@@ -548,11 +541,11 @@ func replayIssueResult(app *TokenApplyRecord) (*IssueTokenResult, error) {
 	}
 	return &IssueTokenResult{
 		TokenApplyId: app.Id,
-		UserId:        app.UserId,
-		TokenId:       token.Id,
-		TokenKey:      formatTokenKey(token.Key),
-		TokenName:     token.Name,
-		RemainQuota:   token.RemainQuota,
+		UserId:       app.UserId,
+		TokenId:      token.Id,
+		TokenKey:     formatTokenKey(token.Key),
+		TokenName:    token.Name,
+		RemainQuota:  token.RemainQuota,
 	}, nil
 }
 
@@ -567,9 +560,9 @@ func replayUpdateResult(tokenApplyId int) (*UpdateTokenResult, error) {
 	}
 	return &UpdateTokenResult{
 		TokenApplyId: app.Id,
-		TokenId:       app.TokenId,
-		Amount:        app.Amount,
-		RemainQuota:   token.RemainQuota,
+		TokenId:      app.TokenId,
+		Amount:       app.Amount,
+		RemainQuota:  token.RemainQuota,
 	}, nil
 }
 
