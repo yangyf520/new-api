@@ -317,6 +317,9 @@ func migrateDB() error {
 	if err := InitializeExternalIdentityClaims(); err != nil {
 		return err
 	}
+	if err := migrateTokenPolicyUniqueIndexes(); err != nil {
+		return err
+	}
 	if err := ValidateAllTokenBudgetPolicies(); err != nil {
 		return fmt.Errorf("token_budget_policies 数据校验失败: %w", err)
 	}
@@ -414,6 +417,9 @@ func migrateDBFast() error {
 	if err := InitializeExternalIdentityClaims(); err != nil {
 		return err
 	}
+	if err := migrateTokenPolicyUniqueIndexes(); err != nil {
+		return err
+	}
 	if common.UsingMainDatabase(common.DatabaseTypeSQLite) {
 		if err := ensureSubscriptionPlanTableSQLite(); err != nil {
 			return err
@@ -424,6 +430,39 @@ func migrateDBFast() error {
 		}
 	}
 	common.SysLog("database migrated")
+	return nil
+}
+
+func migrateTokenPolicyUniqueIndexes() error {
+	type indexMigration struct {
+		model    interface{}
+		oldIndex string
+		newIndex string
+	}
+	migrations := []indexMigration{
+		{
+			model:    &TokenBudgetPolicy{},
+			oldIndex: "idx_budget_policies_scope",
+			newIndex: "idx_budget_policies_apply_scope",
+		},
+		{
+			model:    &TokenSpendPolicy{},
+			oldIndex: "idx_spend_policies_scope",
+			newIndex: "idx_spend_policies_apply_scope",
+		},
+	}
+	for _, m := range migrations {
+		if DB.Migrator().HasIndex(m.model, m.oldIndex) {
+			if err := DB.Migrator().DropIndex(m.model, m.oldIndex); err != nil {
+				return err
+			}
+		}
+		if !DB.Migrator().HasIndex(m.model, m.newIndex) {
+			if err := DB.Migrator().CreateIndex(m.model, m.newIndex); err != nil {
+				return err
+			}
+		}
+	}
 	return nil
 }
 

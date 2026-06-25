@@ -284,18 +284,6 @@ func IssueTokenApplication(req *IssueTokenRequest) (*IssueTokenResult, error) {
 
 	result := &IssueTokenResult{}
 	err = DB.Transaction(func(tx *gorm.DB) error {
-		if !unlimited {
-			if err := syncTokenBudgetPoliciesFromIssue(tx, req, tokenType, 0); err != nil {
-				return err
-			}
-			if err := checkIssueBudget(tx, req, tokenType); err != nil {
-				return err
-			}
-		}
-		if err := syncTokenSpendPoliciesFromIssue(tx, req, tokenType, 0); err != nil {
-			return err
-		}
-
 		user, err := findOrCreateIssueUser(tx, ownerEmail, req.UserName, req.OrgCode)
 		if err != nil {
 			return err
@@ -357,6 +345,9 @@ func IssueTokenApplication(req *IssueTokenRequest) (*IssueTokenResult, error) {
 
 		if !unlimited {
 			if err := syncTokenBudgetPoliciesFromIssue(tx, req, tokenType, app.Id); err != nil {
+				return err
+			}
+			if err := checkBudgetDelta(tx, app, req.Amount); err != nil {
 				return err
 			}
 		}
@@ -743,17 +734,50 @@ func loadTokenBudgetPolicyChain(db *gorm.DB, app *TokenApplyRecord) ([]*TokenBud
 	if db == nil {
 		db = DB
 	}
+	if app == nil {
+		return nil, nil
+	}
+	tokenType := normalizeTokenApplyType(app.TokenType)
+	if app.Id > 0 {
+		policy := &TokenBudgetPolicy{}
+		err := db.Where("token_apply_id = ? AND token_type = ? AND enabled = ? AND scope_type <> ?",
+			app.Id, tokenType, true, "project").First(policy).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			if projectCode := strings.TrimSpace(app.ProjectCode); projectCode != "" {
+				err = db.Where("token_apply_id = ? AND scope_type = ? AND scope_code = ? AND token_type = ? AND enabled = ?",
+					app.Id, "project", projectCode, tokenType, true).First(policy).Error
+			}
+		}
+		if err == nil {
+			chain := []*TokenBudgetPolicy{policy}
+			for policy.ParentId != nil && *policy.ParentId > 0 {
+				parent := &TokenBudgetPolicy{}
+				if err := db.Where("id = ? AND enabled = ?", *policy.ParentId, true).First(parent).Error; err != nil {
+					if errors.Is(err, gorm.ErrRecordNotFound) {
+						break
+					}
+					return nil, err
+				}
+				chain = append(chain, parent)
+				policy = parent
+			}
+			return chain, nil
+		}
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, err
+		}
+	}
 	scopeCode := strings.TrimSpace(app.OrgCode)
 	if scopeCode == "" {
 		return nil, nil
 	}
 	policy := &TokenBudgetPolicy{}
 	err := db.Where("scope_code = ? AND token_type = ? AND enabled = ? AND scope_type <> ?",
-		scopeCode, app.TokenType, true, "project").First(policy).Error
+		scopeCode, tokenType, true, "project").First(policy).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		if projectCode := strings.TrimSpace(app.ProjectCode); projectCode != "" {
 			err = db.Where("scope_type = ? AND scope_code = ? AND token_type = ? AND enabled = ?",
-				"project", projectCode, app.TokenType, true).First(policy).Error
+				"project", projectCode, tokenType, true).First(policy).Error
 		}
 	}
 	if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -785,6 +809,14 @@ func sumApprovedAmount(query *gorm.DB, policy *TokenBudgetPolicy, periodStart in
 		Select("COALESCE(SUM(l.budget_delta), 0)").
 		Joins("JOIN token_apply_records AS a ON a.id = l.token_apply_id").
 		Where("a.token_type = ? AND l.created_at >= ?", policy.TokenType, periodStart)
+	if policy.TokenApplyId > 0 {
+		q = q.Where("l.token_apply_id = ?", policy.TokenApplyId)
+		var total float64
+		if err := q.Scan(&total).Error; err != nil {
+			return 0, err
+		}
+		return total, nil
+	}
 	orgCodes, projectCodes := budgetScopeFilters(policy, allPolicies)
 	switch {
 	case len(orgCodes) > 0 && len(projectCodes) > 0:

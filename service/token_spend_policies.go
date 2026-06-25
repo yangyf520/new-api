@@ -95,7 +95,7 @@ func loadTokenSpendPoliciesForRelay(relayInfo *relaycommon.RelayInfo) ([]*model.
 			orgCode = org
 		}
 	}
-	policies, err := model.LoadTokenSpendPolicyChain(model.DB, relayInfo.TokenId, orgCode, tokenType)
+	policies, err := model.LoadTokenSpendPolicyChain(model.DB, relayInfo.TokenId, tokenApplyId, orgCode, tokenType)
 	if err != nil {
 		return nil, "", 0, fmt.Errorf("加载消耗策略失败: %w", err)
 	}

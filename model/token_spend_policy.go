@@ -15,9 +15,10 @@ const TokenSpendPolicyPeriodNone = "none"
 
 type TokenSpendPolicy struct {
 	Id           int     `json:"id"`
-	ScopeType    string  `json:"scope_type" gorm:"type:varchar(16);uniqueIndex:idx_spend_policies_scope,priority:1"`
-	ScopeCode    string  `json:"scope_code" gorm:"type:varchar(64);uniqueIndex:idx_spend_policies_scope,priority:2"`
-	TokenType    string  `json:"token_type" gorm:"type:varchar(16);default:'user';uniqueIndex:idx_spend_policies_scope,priority:3"`
+	TokenApplyId int     `json:"token_apply_id" gorm:"uniqueIndex:idx_spend_policies_apply_scope,priority:1;index;default:0"`
+	ScopeType    string  `json:"scope_type" gorm:"type:varchar(16);uniqueIndex:idx_spend_policies_apply_scope,priority:2"`
+	ScopeCode    string  `json:"scope_code" gorm:"type:varchar(64);uniqueIndex:idx_spend_policies_apply_scope,priority:3"`
+	TokenType    string  `json:"token_type" gorm:"type:varchar(16);default:'user';uniqueIndex:idx_spend_policies_apply_scope,priority:4"`
 	TokenId      int     `json:"token_id" gorm:"index;default:0"`
 	CapAmount    float64 `json:"cap_amount" gorm:"type:decimal(12,4);default:0"`
 	Currency     string  `json:"currency" gorm:"type:varchar(8);default:'CNY'"`
@@ -25,7 +26,6 @@ type TokenSpendPolicy struct {
 	UsedAmount   float64 `json:"used_amount" gorm:"type:decimal(12,4);default:0"`
 	PeriodKey    string  `json:"period_key" gorm:"type:varchar(16);default:''"`
 	ParentId     *int    `json:"parent_id" gorm:"index"`
-	TokenApplyId int     `json:"token_apply_id" gorm:"index;default:0"`
 	Enabled      bool    `json:"enabled" gorm:"default:true"`
 	CreatedAt    int64   `json:"created_at" gorm:"bigint;index;default:0"`
 	UpdatedAt    int64   `json:"updated_at" gorm:"bigint;index;default:0"`
@@ -44,9 +44,9 @@ var allowedTokenSpendScopeTypes = map[string]struct{}{
 }
 
 var allowedTokenSpendPeriodTypes = map[string]struct{}{
-	"day":                     {},
-	"week":                    {},
-	"month":                   {},
+	"day":                      {},
+	"week":                     {},
+	"month":                    {},
 	TokenSpendPolicyPeriodNone: {},
 }
 
@@ -69,6 +69,20 @@ func ListTokenSpendPolicies(scopeType, scopeCode, tokenType string) ([]TokenSpen
 func getTokenSpendPolicyByScope(tx *gorm.DB, scopeType, scopeCode, tokenType string) (*TokenSpendPolicy, error) {
 	policy := &TokenSpendPolicy{}
 	err := tx.Where("scope_type = ? AND scope_code = ? AND token_type = ?",
+		strings.TrimSpace(strings.ToLower(scopeType)),
+		strings.TrimSpace(scopeCode),
+		normalizeTokenApplyType(tokenType),
+	).First(policy).Error
+	if err != nil {
+		return nil, err
+	}
+	return policy, nil
+}
+
+func getTokenSpendPolicyByApplyScope(tx *gorm.DB, tokenApplyId int, scopeType, scopeCode, tokenType string) (*TokenSpendPolicy, error) {
+	policy := &TokenSpendPolicy{}
+	err := tx.Where("token_apply_id = ? AND scope_type = ? AND scope_code = ? AND token_type = ?",
+		tokenApplyId,
 		strings.TrimSpace(strings.ToLower(scopeType)),
 		strings.TrimSpace(scopeCode),
 		normalizeTokenApplyType(tokenType),
@@ -132,12 +146,12 @@ func syncTokenSpendPoliciesFromUpdate(tx *gorm.DB, app *TokenApplyRecord, req *U
 		return nil
 	}
 	issueReq := &IssueTokenRequest{
-		OrgCode:           app.OrgCode,
+		OrgCode:    app.OrgCode,
 		CapAmount:  capAmount,
-		PeriodType:        periodType,
-		Currency:          firstNonEmpty(req.Currency, app.Currency),
-		TokenType:         app.TokenType,
-		ScopeType:         req.ScopeType,
+		PeriodType: periodType,
+		Currency:   firstNonEmpty(req.Currency, app.Currency),
+		TokenType:  app.TokenType,
+		ScopeType:  req.ScopeType,
 	}
 	return syncTokenSpendPoliciesFromIssue(tx, issueReq, app.TokenType, app.Id)
 }
@@ -159,7 +173,15 @@ func upsertTokenSpendPolicyFromIssue(tx *gorm.DB, spec tokenSpendPolicySyncSpec)
 		return fmt.Errorf("不支持的 period_type: %s", spec.PeriodType)
 	}
 
-	existing, err := getTokenSpendPolicyByScope(tx, spec.ScopeType, spec.ScopeCode, spec.TokenType)
+	var (
+		existing *TokenSpendPolicy
+		err      error
+	)
+	if spec.TokenApplyId > 0 {
+		existing, err = getTokenSpendPolicyByApplyScope(tx, spec.TokenApplyId, spec.ScopeType, spec.ScopeCode, spec.TokenType)
+	} else {
+		existing, err = getTokenSpendPolicyByScope(tx, spec.ScopeType, spec.ScopeCode, spec.TokenType)
+	}
 	notFound := errors.Is(err, gorm.ErrRecordNotFound)
 	if err != nil && !notFound {
 		return err
@@ -193,7 +215,7 @@ func upsertTokenSpendPolicyFromIssue(tx *gorm.DB, spec tokenSpendPolicySyncSpec)
 
 // LoadTokenSpendPolicyChain loads the policy chain used for consumption cap enforcement.
 // Priority: token-level policy (token_id) overrides org/project policies.
-func LoadTokenSpendPolicyChain(db *gorm.DB, tokenId int, orgCode, tokenType string) ([]*TokenSpendPolicy, error) {
+func LoadTokenSpendPolicyChain(db *gorm.DB, tokenId, tokenApplyId int, orgCode, tokenType string) ([]*TokenSpendPolicy, error) {
 	if db == nil {
 		db = DB
 	}
@@ -205,6 +227,18 @@ func LoadTokenSpendPolicyChain(db *gorm.DB, tokenId int, orgCode, tokenType stri
 		err := db.Where("token_id = ? AND token_type = ? AND enabled = ?", tokenId, tokenType, true).First(tokenPolicy).Error
 		if err == nil {
 			return loadTokenSpendPolicyParents(db, tokenPolicy)
+		}
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, err
+		}
+	}
+
+	if tokenApplyId > 0 {
+		applyPolicy := &TokenSpendPolicy{}
+		err := db.Where("token_apply_id = ? AND token_type = ? AND enabled = ?",
+			tokenApplyId, tokenType, true).Order("id ASC").First(applyPolicy).Error
+		if err == nil {
+			return loadTokenSpendPolicyParents(db, applyPolicy)
 		}
 		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, err

@@ -11,16 +11,16 @@ import (
 
 type TokenBudgetPolicy struct {
 	Id           int     `json:"id"`
-	ScopeType    string  `json:"scope_type" gorm:"type:varchar(16);uniqueIndex:idx_budget_policies_scope,priority:1"`
-	ScopeCode    string  `json:"scope_code" gorm:"type:varchar(64);uniqueIndex:idx_budget_policies_scope,priority:2"`
-	TokenType    string  `json:"token_type" gorm:"type:varchar(16);default:'user';uniqueIndex:idx_budget_policies_scope,priority:3"`
+	TokenApplyId int     `json:"token_apply_id" gorm:"uniqueIndex:idx_budget_policies_apply_scope,priority:1;index;default:0"`
+	ScopeType    string  `json:"scope_type" gorm:"type:varchar(16);uniqueIndex:idx_budget_policies_apply_scope,priority:2"`
+	ScopeCode    string  `json:"scope_code" gorm:"type:varchar(64);uniqueIndex:idx_budget_policies_apply_scope,priority:3"`
+	TokenType    string  `json:"token_type" gorm:"type:varchar(16);default:'user';uniqueIndex:idx_budget_policies_apply_scope,priority:4"`
 	TotalAmount  float64 `json:"total_amount" gorm:"type:decimal(12,4);default:0"`
 	Currency     string  `json:"currency" gorm:"type:varchar(8);default:'CNY'"`
 	ParentId     *int    `json:"parent_id" gorm:"index"`
-	TokenApplyId          int     `json:"token_apply_id" gorm:"index;default:0"`
-	Enabled               bool    `json:"enabled" gorm:"default:true"`
-	CreatedAt             int64   `json:"created_at" gorm:"bigint;index;default:0"`
-	UpdatedAt             int64   `json:"updated_at" gorm:"bigint;index;default:0"`
+	Enabled      bool    `json:"enabled" gorm:"default:true"`
+	CreatedAt    int64   `json:"created_at" gorm:"bigint;index;default:0"`
+	UpdatedAt    int64   `json:"updated_at" gorm:"bigint;index;default:0"`
 }
 
 func (TokenBudgetPolicy) TableName() string {
@@ -215,6 +215,20 @@ func getTokenBudgetPolicyByScope(tx *gorm.DB, scopeType, scopeCode, tokenType st
 	return policy, nil
 }
 
+func getTokenBudgetPolicyByApplyScope(tx *gorm.DB, tokenApplyId int, scopeType, scopeCode, tokenType string) (*TokenBudgetPolicy, error) {
+	policy := &TokenBudgetPolicy{}
+	err := tx.Where("token_apply_id = ? AND scope_type = ? AND scope_code = ? AND token_type = ?",
+		tokenApplyId,
+		strings.TrimSpace(strings.ToLower(scopeType)),
+		strings.TrimSpace(scopeCode),
+		normalizeTokenApplyType(tokenType),
+	).First(policy).Error
+	if err != nil {
+		return nil, err
+	}
+	return policy, nil
+}
+
 type tokenBudgetPolicySyncSpec struct {
 	ScopeType       string
 	ScopeCode       string
@@ -310,16 +324,16 @@ func syncTokenBudgetPoliciesFromUpdate(tx *gorm.DB, app *TokenApplyRecord, req *
 		return nil
 	}
 	issueReq := &IssueTokenRequest{
-		OrgCode:          app.OrgCode,
-		OrgBudget:        req.OrgBudget,
-		ProjectCode:      app.ProjectCode,
-		ProjectBudget:    req.ProjectBudget,
-		Currency:         firstNonEmpty(req.Currency, app.Currency),
-		TokenType:        app.TokenType,
-		ScopeType:        req.ScopeType,
-		ParentOrgCode:    req.ParentOrgCode,
-		ParentOrgBudget:  req.ParentOrgBudget,
-		ParentScopeType:  req.ParentScopeType,
+		OrgCode:         app.OrgCode,
+		OrgBudget:       req.OrgBudget,
+		ProjectCode:     app.ProjectCode,
+		ProjectBudget:   req.ProjectBudget,
+		Currency:        firstNonEmpty(req.Currency, app.Currency),
+		TokenType:       app.TokenType,
+		ScopeType:       req.ScopeType,
+		ParentOrgCode:   req.ParentOrgCode,
+		ParentOrgBudget: req.ParentOrgBudget,
+		ParentScopeType: req.ParentScopeType,
 	}
 	return syncTokenBudgetPoliciesFromIssue(tx, issueReq, app.TokenType, app.Id)
 }
@@ -334,7 +348,15 @@ func upsertTokenBudgetPolicyFromIssue(tx *gorm.DB, spec tokenBudgetPolicySyncSpe
 		return nil
 	}
 
-	existing, err := getTokenBudgetPolicyByScope(tx, spec.ScopeType, spec.ScopeCode, spec.TokenType)
+	var (
+		existing *TokenBudgetPolicy
+		err      error
+	)
+	if spec.TokenApplyId > 0 {
+		existing, err = getTokenBudgetPolicyByApplyScope(tx, spec.TokenApplyId, spec.ScopeType, spec.ScopeCode, spec.TokenType)
+	} else {
+		existing, err = getTokenBudgetPolicyByScope(tx, spec.ScopeType, spec.ScopeCode, spec.TokenType)
+	}
 	notFound := errors.Is(err, gorm.ErrRecordNotFound)
 	if err != nil && !notFound {
 		return err
@@ -390,7 +412,12 @@ func upsertTokenBudgetPolicyFromIssue(tx *gorm.DB, spec tokenBudgetPolicySyncSpe
 		if parentScopeType == "" {
 			parentScopeType = "org"
 		}
-		parent, err := getTokenBudgetPolicyByScope(tx, parentScopeType, parentScopeCode, spec.TokenType)
+		var parent *TokenBudgetPolicy
+		if spec.TokenApplyId > 0 {
+			parent, err = getTokenBudgetPolicyByApplyScope(tx, spec.TokenApplyId, parentScopeType, parentScopeCode, spec.TokenType)
+		} else {
+			parent, err = getTokenBudgetPolicyByScope(tx, parentScopeType, parentScopeCode, spec.TokenType)
+		}
 		if err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return fmt.Errorf("父部门总包不存在: %s", parentScopeCode)
