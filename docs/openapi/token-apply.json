@@ -277,7 +277,7 @@
           },
           "token_type": {
             "type": "string",
-            "description": "user=员工令牌；app=应用令牌（Key 归 app_user_email）",
+            "description": "user=员工令牌；app=应用令牌（Key 归申请 email）",
             "default": "user",
             "enum": ["user", "app"]
           },
