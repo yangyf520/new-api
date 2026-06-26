@@ -143,9 +143,21 @@ export TOKEN_KEY="sk-..."      # 发放响应中的 token_key，Relay 时用
 - **必填** — `ticket_no`、`email`、`org_code`；`user` 时加 `work_no`
 - **金额** — 默认 `quota_mode=fixed`，`amount` 必填（**分包**，本笔 Key 额度）
 - **总包（①）** — 可选 `org_budget`（部门审批总上限，自动 upsert `token_budget_policies`）；`project_budget` 在有 `project_code` 时设项目总包；`parent_org_code` + `parent_org_budget` 设上级总包
-- **消耗封顶（③）** — 可选 `cap_amount` + `period_type`（默认 `month`），自动 upsert `token_spend_policies`
+- **消耗封顶（③）** — `amount` 作为封顶上限，`period_type` 指定周期（默认 `month`），自动 upsert `token_spend_policies`
 - **scope** — `scope_type` 默认 `team`
 - **事务** — `users` + 台账 + `tokens` + 审计 + 总包同步 **同一事务**，失败全回滚
+
+<details>
+<summary><strong>金额字段速查（amount / org_budget）</strong></summary>
+
+| 字段 | 管哪一步 | 作用 | 写入位置 |
+|------|----------|------|----------|
+| `amount` | ② Key 总额 + ③ 周期消耗 | 本次发放/变更后总额度（分包），并作为周期封顶上限 | `token_apply_records.amount`、`tokens.remain_quota`、`token_apply_logs`、`token_spend_policies.cap_amount` |
+| `org_budget` | ① 审批预算 | 组织累计最多能批多少（总包） | `token_budget_policies.total_amount` |
+
+注意：`period_type` 只作用于 ③ 消耗封顶；`period_type=none` 时不启用 ③ 封顶。
+
+</details>
 
 <details>
 <summary><strong>curl 示例</strong></summary>
@@ -165,6 +177,7 @@ curl -sS -X POST "${BASE_URL}/api/token-apply" \
     "org_code": "D001-T010",
     "org_name": "平台组",
     "org_budget": 30000,
+    "period_type": "day",
     "token_type": "user",
     "work_no": "E10086",
     "user_name": "张三",
@@ -265,7 +278,7 @@ sequenceDiagram
 - **不可改** — `email`、`work_no`、`token_type`、首次 `ticket_no`
 - **并发** — `FOR UPDATE` 锁台账 + `tokens`
 
-**可选总包 / 消耗字段（增额时）** — `org_budget`、`project_budget`、`parent_org_code`、`parent_org_budget`、`cap_amount`、`period_type`、`scope_type`（语义同 §3.3 发放）
+**可选总包 / 消耗字段（增额时）** — `org_budget`、`project_budget`、`parent_org_code`、`parent_org_budget`、`period_type`、`scope_type`（语义同 §3.3 发放）
 
 <details>
 <summary><strong>curl 示例</strong></summary>
@@ -353,9 +366,9 @@ curl -sS -X PUT "${BASE_URL}/api/token-apply/${TOKEN_APPLY_ID}" \
 <details>
 <summary><strong>消耗封顶字段（随发放/变更同步）</strong></summary>
 
-在 `POST /api/token-apply` 与 `PUT /api/token-apply/:id` 中可选携带：
+在 `POST /api/token-apply` 与 `PUT /api/token-apply/:id` 中：
 
-- `cap_amount`：部门/团队本周期消耗封顶（元）
+- `amount`：部门/团队本周期消耗封顶（元）
 - `period_type`：`day` / `week` / `month` / `none`（默认 `month`）
 
 写入（upsert 键）：`(scope_type, org_code, token_type)` → `token_spend_policies`。
@@ -428,7 +441,7 @@ curl -sS -X PUT "${BASE_URL}/api/token-apply/${TOKEN_APPLY_ID}" \
 |------|------|------|
 | `scope_type` | `company` / `org` / `team` / `project` / `token` | 申请 `scope_type`（默认 `team`）或 token 级 |
 | `scope_code` | 精确匹配 | 申请 `org_code` 或 `token_id` |
-| `cap_amount` | 周期消耗上限（元） | 申请 `cap_amount` |
+| `cap_amount` | 周期消耗上限（元） | 申请 `amount` |
 | `period_type` | `day` / `week` / `month` / `none` | 申请 `period_type`（默认 `month`） |
 | `used_amount` | 当前 `period_key` 内已消耗（元） | Relay Reserve/Adjust/Release |
 | `period_key` | 当前周期键 | 同上；换期时 `used_amount` 归零 |
@@ -556,7 +569,7 @@ curl -sS -X POST "${BASE_URL}/api/token-apply" \
 
 > 管 **③ 实际花了多少**。与 §5 **独立表、独立计数**。
 
-- **组织封顶** — `org_code` 日/周/月累计 ≤ `cap_amount`
+- **组织封顶** — `org_code` 日/周/月累计 ≤ 申请 `amount`（落库到 `cap_amount`）
 - **Key 封顶** — `scope_type=token` 命中后**覆盖**组织链
 - **`none` / 未配** — 跳过该层（仍受 ② 约束）
 - **硬拦** — 预扣前超 cap → **403**，不调上游
@@ -607,7 +620,7 @@ sequenceDiagram
 
 ## 11. 限额与超额控制
 
-> **集成方必读。** 发放时带 `org_budget`（总包）+ `amount`（分包）→ 发 Key → Relay 自动校验 ③（若已配消耗策略）。
+> **集成方必读。** 发放时带 `org_budget`（总包）+ `amount`（分包）→ 发 Key → Relay 按 `amount` 自动校验 ③（`period_type=none` 可关闭）。
 
 ### 11.1 三层关系
 
@@ -628,7 +641,7 @@ flowchart TB
 
 | | ① `token_budget_policies` | ③ `token_spend_policies` |
 |--|---------------------|---------------------------|
-| 上限 | `total_amount`（来自 `org_budget`） | `cap_amount` |
+| 上限 | `total_amount`（来自 `org_budget`） | `cap_amount`（来自申请 `amount`） |
 | 已用 | 审计 `budget_delta`（全历史累计） | 行内 `used_amount`（当前 `period_key`） |
 | 触发 | 发放 / 增额 | Relay 预扣 + 结算 |
 | `none` | — | 跳过该层封顶 |
@@ -649,12 +662,14 @@ flowchart TB
 ```text
 ①  累计已批 + 本次  >  total_amount     →  拒绝发放/增额
 ②  remain_quota  <  本次 quota            →  403
-③  used + 本次(元)  >  cap_amount         →  403
+③  used + 本次(元)  >  cap_amount(=amount) →  403
 ```
 
 ### 11.5 推荐对接顺序
 
 **1. 发放 Key（总包 + 分包一次提交）**
+
+> 如需同时开启 ③ 消耗封顶，请在同一请求加上 `period_type`（`amount` 自动作为封顶上限，见下一条示例）。
 
 ```bash
 curl -sS -X POST "${BASE_URL}/api/token-apply" \
@@ -688,7 +703,6 @@ curl -sS -X POST "${BASE_URL}/api/token-apply" \
     "currency": "CNY",
     "org_code": "D001-T010",
     "org_name": "平台组",
-    "cap_amount": 500,
     "period_type": "day",
     "token_type": "user",
     "work_no": "E10086",
@@ -724,7 +738,6 @@ curl -sS -X POST "${BASE_URL}/api/token-apply" \
     "currency": "CNY",
     "org_code": "D001-T010",
     "org_budget": 30000,
-    "cap_amount": 30000,
     "period_type": "month",
     "token_type": "user",
     "work_no": "E10086"
@@ -748,7 +761,6 @@ curl -sS -X POST "${BASE_URL}/api/token-apply" \
     "currency": "CNY",
     "org_code": "D001-T010",
     "org_budget": 30000,
-    "cap_amount": 500,
     "period_type": "day",
     "parent_org_code": "D001",
     "parent_org_budget": 100000,
@@ -802,7 +814,7 @@ curl -sS -G "${BASE_URL}/api/token-apply/consumption" \
 - **还能批多少** → ①，总包随 `org_budget` 同步；已批见审计 `budget_delta`
 - **单 Key 总消费** → 发 Key 时 `amount`（②）
 - **组织日/周/月实际消耗** → ③ + `day`/`week`/`month`
-- **某层消耗不限** → 不配 ③ 或 `period_type=none`
+- **某层消耗不限** → 设置 `period_type=none`
 - **多层都卡** → 各层一行 + `parent_scope_*`
 - **单 Key 特殊限额** → ③ `scope_type=token`
 

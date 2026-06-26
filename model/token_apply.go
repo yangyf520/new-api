@@ -151,7 +151,6 @@ type IssueTokenRequest struct {
 	OrgCode         string  `json:"org_code"`
 	OrgName         string  `json:"org_name"`
 	OrgBudget       float64 `json:"org_budget"`
-	CapAmount       float64 `json:"cap_amount"`
 	PeriodType      string  `json:"period_type"`
 	ProjectCode     string  `json:"project_code"`
 	ProjectBudget   float64 `json:"project_budget"`
@@ -174,7 +173,6 @@ type UpdateTokenRequest struct {
 	Amount          float64 `json:"amount"`
 	Currency        string  `json:"currency"`
 	OrgBudget       float64 `json:"org_budget"`
-	CapAmount       float64 `json:"cap_amount"`
 	PeriodType      string  `json:"period_type"`
 	ProjectBudget   float64 `json:"project_budget"`
 	ScopeType       string  `json:"scope_type"`

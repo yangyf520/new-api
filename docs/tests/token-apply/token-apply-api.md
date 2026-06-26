@@ -47,7 +47,6 @@ curl -sS -X POST "${BASE_URL}/api/token-apply" \
     "org_code": "D001-T010",
     "org_name": "平台研发组",
     "org_budget": 30000,
-    "cap_amount": 500,
     "period_type": "day",
     "project_code": "PRJ-2025-01",
     "project_budget": 5000,
@@ -65,6 +64,9 @@ curl -sS -X POST "${BASE_URL}/api/token-apply" \
   }'
 ```
 
+> 金额字段对照：`amount`=本次分包（Key 额度）+ 周期消耗封顶（③），`org_budget`=审批总包（①）。  
+> `period_type` 作用于 `amount` 对应的周期封顶策略；`period_type=none` 表示不启用 ③ 封顶。
+
 ### 2.2 请求字段
 
 | 字段 | 必填 | 默认 | 说明 |
@@ -77,7 +79,6 @@ curl -sS -X POST "${BASE_URL}/api/token-apply" \
 | `org_code` | ✓ | — | 部门/团队编码 |
 | `org_name` | | `""` | 部门名称 |
 | `org_budget` | | 不传则不建 | 部门审批总上限（元）→ 自动写入 `token_budget_policies` |
-| `cap_amount` | | 不传则不建 | 部门周期消耗封顶（元）→ 自动写入 `token_spend_policies`（③） |
 | `project_code` | | `""` | 项目编码 |
 | `project_budget` | | 不传则不建 | 项目审批总上限（元），需有 `project_code` |
 | `token_type` | | `user` | `user` 员工 / `app` 应用（Key 归申请 `email`） |
@@ -145,7 +146,6 @@ curl -sS -X PUT "${BASE_URL}/api/token-apply/${TOKEN_APPLY_ID}" \
     "amount": 5000,
     "currency": "CNY",
     "org_budget": 50000,
-    "cap_amount": 800,
     "period_type": "day",
     "project_budget": 8000,
     "scope_type": "team",
@@ -156,6 +156,8 @@ curl -sS -X PUT "${BASE_URL}/api/token-apply/${TOKEN_APPLY_ID}" \
   }'
 ```
 
+> 变更接口同样适用：`period_type` 用于更新 `amount` 对应的 ③ 周期封顶策略。
+
 ### 3.2 请求字段
 
 | 字段 | 必填 | 说明 |
@@ -165,7 +167,6 @@ curl -sS -X PUT "${BASE_URL}/api/token-apply/${TOKEN_APPLY_ID}" \
 | `amount` | ✓ | 变更后**总**审批额（元），非增量 |
 | `currency` | | 默认沿用台账币种 |
 | `org_budget` | | 更新部门总包（可选） |
-| `cap_amount` | | 更新部门消耗封顶（可选） |
 | `project_budget` | | 更新项目总包（可选） |
 | `scope_type` | | 更新部门总包维度 |
 | `period_type` | | 更新消耗封顶周期 |
