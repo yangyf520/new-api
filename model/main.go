@@ -435,25 +435,37 @@ func migrateDBFast() error {
 
 func migrateTokenPolicyUniqueIndexes() error {
 	type indexMigration struct {
-		model    interface{}
-		oldIndex string
-		newIndex string
+		model        interface{}
+		tableName    string
+		legacyIndex  []string
+		newIndex     string
 	}
 	migrations := []indexMigration{
 		{
-			model:    &TokenBudgetPolicy{},
-			oldIndex: "idx_budget_policies_scope",
+			model:     &TokenBudgetPolicy{},
+			tableName: (&TokenBudgetPolicy{}).TableName(),
+			legacyIndex: []string{
+				"idx_budget_policies_scope",
+				"idx_consumption_budget_policies_scope",
+				"idx_token_apply_budget_policies_scope",
+			},
 			newIndex: "idx_budget_policies_apply_scope",
 		},
 		{
-			model:    &TokenSpendPolicy{},
-			oldIndex: "idx_spend_policies_scope",
+			model:     &TokenSpendPolicy{},
+			tableName: (&TokenSpendPolicy{}).TableName(),
+			legacyIndex: []string{
+				"idx_consumption_policies_scope",
+				"idx_spend_policies_scope",
+				"idx_token_apply_spend_cap_policies_scope",
+				"idx_token_spend_cap_policies_scope",
+			},
 			newIndex: "idx_spend_policies_apply_scope",
 		},
 	}
 	for _, m := range migrations {
-		if DB.Migrator().HasIndex(m.model, m.oldIndex) {
-			if err := DB.Migrator().DropIndex(m.model, m.oldIndex); err != nil {
+		for _, indexName := range m.legacyIndex {
+			if err := dropPolicyUniqueIndexIfExists(m.model, m.tableName, indexName); err != nil {
 				return err
 			}
 		}
@@ -462,6 +474,37 @@ func migrateTokenPolicyUniqueIndexes() error {
 				return err
 			}
 		}
+	}
+	return nil
+}
+
+// dropPolicyUniqueIndexIfExists removes legacy scope-only unique indexes so multiple
+// token applications can share the same org_code with distinct token_apply_id rows.
+func dropPolicyUniqueIndexIfExists(model interface{}, tableName, indexName string) error {
+	if indexName == "" {
+		return nil
+	}
+	if DB.Migrator().HasIndex(model, indexName) {
+		if err := DB.Migrator().DropIndex(model, indexName); err != nil {
+			return err
+		}
+	}
+	if common.UsingPostgreSQL || common.UsingSQLite {
+		return DB.Exec("DROP INDEX IF EXISTS " + indexName).Error
+	}
+	if common.UsingMySQL {
+		var count int64
+		if err := DB.Raw(
+			`SELECT COUNT(*) FROM information_schema.statistics
+			 WHERE table_schema = DATABASE() AND table_name = ? AND index_name = ?`,
+			tableName, indexName,
+		).Scan(&count).Error; err != nil {
+			return err
+		}
+		if count == 0 {
+			return nil
+		}
+		return DB.Exec(fmt.Sprintf("ALTER TABLE %s DROP INDEX %s", tableName, indexName)).Error
 	}
 	return nil
 }
