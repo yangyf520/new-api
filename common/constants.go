@@ -165,6 +165,9 @@ var RelayIdleConnTimeout int // unit is second
 var RelayMaxIdleConns int
 var RelayMaxIdleConnsPerHost int
 
+// RelaySkipModelCallEnabled skips upstream model HTTP; auth, pricing, and billing still run.
+var RelaySkipModelCallEnabled bool
+
 var GeminiSafetySetting string
 
 // https://docs.cohere.com/docs/safety-modes Type; NONE/CONTEXTUAL/STRICT

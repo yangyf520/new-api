@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -69,6 +70,10 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 		return types.NewError(fmt.Errorf("invalid api type: %d", info.ApiType), types.ErrorCodeInvalidApiType, types.ErrOptionWithSkipRetry())
 	}
 	adaptor.Init(info)
+
+	if common.RelaySkipModelCallEnabled {
+		return relaySkipModelCallOpenAI(c, info, request)
+	}
 
 	passThroughGlobal := model_setting.GetGlobalSettings().PassThroughRequestEnabled
 	if info.RelayMode == relayconstant.RelayModeChatCompletions &&
@@ -219,5 +224,117 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 	} else {
 		service.PostTextConsumeQuota(c, info, usage.(*dto.Usage), nil)
 	}
+	return nil
+}
+
+const mockSkippedModelCallContent = "relay skip model call"
+
+// relaySkipModelCallOpenAI returns a mock chat completion without calling upstream (RELAY_SKIP_MODEL_CALL).
+func relaySkipModelCallOpenAI(c *gin.Context, info *relaycommon.RelayInfo, request *dto.GeneralOpenAIRequest) *types.NewAPIError {
+	usage := relaySkipModelCallUsage(info)
+	isStream := info.IsStream || lo.FromPtrOr(request.Stream, false)
+
+	if isStream {
+		if err := writeRelaySkipModelCallStreamResponse(c, info, usage); err != nil {
+			return types.NewError(err, types.ErrorCodeJsonMarshalFailed, types.ErrOptionWithSkipRetry())
+		}
+	} else if err := writeRelaySkipModelCallJSONResponse(c, info, usage); err != nil {
+		return types.NewError(err, types.ErrorCodeJsonMarshalFailed, types.ErrOptionWithSkipRetry())
+	}
+
+	service.PostTextConsumeQuota(c, info, usage, nil)
+	return nil
+}
+
+func relaySkipModelCallUsage(info *relaycommon.RelayInfo) *dto.Usage {
+	prompt := info.GetEstimatePromptTokens()
+	if prompt <= 0 {
+		prompt = 1
+	}
+	completion := relaySkipModelCallCompletionTokens()
+	return &dto.Usage{
+		PromptTokens:     prompt,
+		CompletionTokens: completion,
+		TotalTokens:      prompt + completion,
+	}
+}
+
+func relaySkipModelCallCompletionTokens() int {
+	completion := common.GetEnvOrDefault(
+		"MODEL_COMPLETION_TOKENS",
+		common.GetEnvOrDefault("RELAY_SKIP_MODEL_CALL_COMPLETION_TOKENS", 1),
+	)
+	if completion < 0 {
+		return 0
+	}
+	return completion
+}
+
+func writeRelaySkipModelCallJSONResponse(c *gin.Context, info *relaycommon.RelayInfo, usage *dto.Usage) error {
+	c.Header("X-Relay-Skip-Model-Call", "true")
+	c.JSON(http.StatusOK, dto.OpenAITextResponse{
+		Id:      "chatcmpl-skip-model-call",
+		Object:  "chat.completion",
+		Created: time.Now().Unix(),
+		Model:   info.OriginModelName,
+		Choices: []dto.OpenAITextResponseChoice{{
+			Index:        0,
+			FinishReason: "stop",
+			Message:      dto.Message{Role: "assistant", Content: mockSkippedModelCallContent},
+		}},
+		Usage: *usage,
+	})
+	return nil
+}
+
+func writeRelaySkipModelCallStreamResponse(c *gin.Context, info *relaycommon.RelayInfo, usage *dto.Usage) error {
+	id := "chatcmpl-skip-model-call"
+	created := time.Now().Unix()
+	model := info.OriginModelName
+
+	c.Header("Content-Type", "text/event-stream")
+	c.Header("Cache-Control", "no-cache")
+	c.Header("Connection", "keep-alive")
+	c.Header("X-Relay-Skip-Model-Call", "true")
+
+	contentDelta := dto.ChatCompletionsStreamResponseChoiceDelta{Role: "assistant"}
+	contentDelta.SetContentString(mockSkippedModelCallContent)
+	if err := writeRelaySkipModelCallSSE(c, dto.ChatCompletionsStreamResponse{
+		Id: id, Object: "chat.completion.chunk", Created: created, Model: model,
+		Choices: []dto.ChatCompletionsStreamResponseChoice{{
+			Index: 0,
+			Delta: contentDelta,
+		}},
+	}); err != nil {
+		return err
+	}
+
+	finish := "stop"
+	if err := writeRelaySkipModelCallSSE(c, dto.ChatCompletionsStreamResponse{
+		Id: id, Object: "chat.completion.chunk", Created: created, Model: model,
+		Choices: []dto.ChatCompletionsStreamResponseChoice{{
+			Index:        0,
+			FinishReason: &finish,
+		}},
+		Usage: usage,
+	}); err != nil {
+		return err
+	}
+	_, err := c.Writer.WriteString("data: [DONE]\n\n")
+	if err == nil {
+		c.Writer.Flush()
+	}
+	return err
+}
+
+func writeRelaySkipModelCallSSE(c *gin.Context, payload any) error {
+	data, err := common.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(c.Writer, "data: %s\n\n", data); err != nil {
+		return err
+	}
+	c.Writer.Flush()
 	return nil
 }
