@@ -20,11 +20,13 @@ For commercial licensing, please contact support@quantumnous.com
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Card, Empty, Spin, TabPane, Tabs, Table, Tag, Typography } from '@douyinfe/semi-ui';
+import { Card, Empty, Input, Spin, TabPane, Tabs, Table, Tag, Typography } from '@douyinfe/semi-ui';
+import { IconSearch } from '@douyinfe/semi-icons';
 import { API } from '../../helpers';
 import { timestamp2string } from '../../helpers/utils';
 import { formatCurrencyAmount, formatApplicationBalanceAmount, rowCurrency } from './format';
 import TokenModal from './TokenModal';
+import { filterPoliciesWithAncestors, filterApplications, CLIENT_RECORD_SEARCH_LIMIT } from './search';
 
 const { Title } = Typography;
 
@@ -57,14 +59,31 @@ const SCOPE_TYPE_TAG = {
   token: { color: 'grey', labelKey: '令牌' },
 };
 
+function compareByApplyIdDesc(a, b) {
+  const aid = Number(a.token_apply_id) || 0;
+  const bid = Number(b.token_apply_id) || 0;
+  if (bid !== aid) return bid - aid;
+  return b.id - a.id;
+}
+
+function sortPolicySiblings(nodes) {
+  nodes.sort(compareByApplyIdDesc);
+  for (const node of nodes) {
+    if (node.children?.length) {
+      sortPolicySiblings(node.children);
+    }
+  }
+}
+
 function buildPolicyTree(policies) {
   if (!policies?.length) return [];
+  const sorted = [...policies].sort(compareByApplyIdDesc);
   const byId = new Map();
-  for (const policy of policies) {
+  for (const policy of sorted) {
     byId.set(policy.id, { ...policy, children: [] });
   }
   const roots = [];
-  for (const policy of policies) {
+  for (const policy of sorted) {
     const node = byId.get(policy.id);
     const parentId = policy.parent_id;
     if (parentId != null && byId.has(parentId)) {
@@ -83,6 +102,7 @@ function buildPolicyTree(policies) {
     }
   };
   prune(roots);
+  sortPolicySiblings(roots);
   return roots;
 }
 
@@ -94,20 +114,54 @@ const TokenApply = () => {
   const [appTotal, setAppTotal] = useState(0);
   const [appPage, setAppPage] = useState(1);
   const [appPageSize, setAppPageSize] = useState(20);
+  const [applicationSource, setApplicationSource] = useState([]);
   const [budgetPolicies, setBudgetPolicies] = useState([]);
   const [consumptionPolicies, setConsumptionPolicies] = useState([]);
   const [tokenModalApp, setTokenModalApp] = useState(null);
+  const [searchInput, setSearchInput] = useState('');
+  const [keyword, setKeyword] = useState('');
 
-  const loadApplications = useCallback(async () => {
+  useEffect(() => {
+    const timer = window.setTimeout(() => setKeyword(searchInput), 300);
+    return () => window.clearTimeout(timer);
+  }, [searchInput]);
+
+  useEffect(() => {
+    setAppPage(1);
+  }, [keyword]);
+
+  const loadApplicationSearchSource = useCallback(async () => {
+    setLoading(true);
+    try {
+      const { items } = await fetchApplications(1, CLIENT_RECORD_SEARCH_LIMIT, '');
+      setApplicationSource([...items].sort((a, b) => b.id - a.id));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const loadApplicationPage = useCallback(async () => {
     setLoading(true);
     try {
       const { items, total } = await fetchApplications(appPage, appPageSize, '');
-      setApplications(items);
+      const rows = [...items].sort((a, b) => b.id - a.id);
+      setApplicationSource(rows);
+      setApplications(rows);
       setAppTotal(total);
     } finally {
       setLoading(false);
     }
   }, [appPage, appPageSize]);
+
+  useEffect(() => {
+    if (!keyword?.trim()) {
+      return;
+    }
+    const filtered = filterApplications(applicationSource, keyword);
+    setAppTotal(filtered.length);
+    const start = (appPage - 1) * appPageSize;
+    setApplications(filtered.slice(start, start + appPageSize));
+  }, [applicationSource, keyword, appPage, appPageSize]);
 
   const loadPolicies = useCallback(async (tab) => {
     setLoading(true);
@@ -123,17 +177,53 @@ const TokenApply = () => {
   }, []);
 
   useEffect(() => {
-    if (activeTab === 'records') {
-      loadApplications();
-    } else if (activeTab === 'budget') {
+    if (activeTab !== 'records') {
+      return;
+    }
+    if (keyword?.trim()) {
+      loadApplicationSearchSource();
+      return;
+    }
+    loadApplicationPage();
+  }, [activeTab, keyword, loadApplicationSearchSource, loadApplicationPage]);
+
+  useEffect(() => {
+    if (activeTab === 'budget') {
       loadPolicies('budget');
     } else if (activeTab === 'consumption') {
       loadPolicies('consumption');
     }
-  }, [activeTab, loadApplications, loadPolicies]);
+  }, [activeTab, loadPolicies]);
+
+  const applicationIdCol = useMemo(
+    () => ({
+      title: t('申请ID'),
+      dataIndex: 'token_apply_id',
+      width: 108,
+      render: (value, row) => {
+        const applyId = value ?? row.id;
+        if (!applyId || applyId <= 0) {
+          return '-';
+        }
+        return (
+          <Link
+            to={`/console/token-apply/${applyId}`}
+            className='text-semi-color-primary font-mono'
+          >
+            {applyId}
+          </Link>
+        );
+      },
+    }),
+    [t],
+  );
 
   const applicationColumns = useMemo(
     () => [
+      {
+        ...applicationIdCol,
+        dataIndex: 'id',
+      },
       {
         title: t('流程单号'),
         dataIndex: 'ticket_no',
@@ -203,7 +293,7 @@ const TokenApply = () => {
         ),
       },
     ],
-    [t],
+    [applicationIdCol, t],
   );
 
   const policyTreeBaseColumns = useMemo(
@@ -248,32 +338,34 @@ const TokenApply = () => {
 
   const budgetColumns = useMemo(
     () => [
+      applicationIdCol,
       ...policyTreeBaseColumns,
       currencyAmountCol('上限额度', 'total_amount'),
       currencyAmountCol('已批额度', 'approved_amount'),
       currencyAmountCol('剩余额度', 'remaining_amount'),
     ],
-    [policyTreeBaseColumns, t],
+    [policyTreeBaseColumns, applicationIdCol, t],
   );
 
   const consumptionColumns = useMemo(
     () => [
+      applicationIdCol,
       ...policyTreeBaseColumns,
       currencyAmountCol('封顶额度', 'cap_amount', 4),
       currencyAmountCol('已用额度', 'used_amount', 4),
       currencyAmountCol('剩余额度', 'remaining_amount', 4),
     ],
-    [policyTreeBaseColumns, t],
+    [policyTreeBaseColumns, applicationIdCol, t],
   );
 
   const budgetPolicyTree = useMemo(
-    () => buildPolicyTree(budgetPolicies),
-    [budgetPolicies],
+    () => buildPolicyTree(filterPoliciesWithAncestors(budgetPolicies, keyword, t, SCOPE_TYPE_TAG)),
+    [budgetPolicies, keyword, t],
   );
 
   const consumptionPolicyTree = useMemo(
-    () => buildPolicyTree(consumptionPolicies),
-    [consumptionPolicies],
+    () => buildPolicyTree(filterPoliciesWithAncestors(consumptionPolicies, keyword, t, SCOPE_TYPE_TAG)),
+    [consumptionPolicies, keyword, t],
   );
 
   const renderTable = (columns, dataSource, emptyText, pagination, tree = false) => (
@@ -295,7 +387,7 @@ const TokenApply = () => {
   return (
     <div className='mt-[60px] px-2'>
       <Card>
-        <Title heading={4} style={{ marginBottom: 16 }}>
+        <Title heading={4} style={{ marginBottom: 0 }}>
           {t('部门额度')}
         </Title>
         <Spin spinning={loading}>
@@ -303,6 +395,18 @@ const TokenApply = () => {
             type='line'
             activeKey={activeTab}
             onChange={setActiveTab}
+            style={{ marginTop: 0 }}
+            tabBarExtraContent={
+              <Input
+                size='small'
+                value={searchInput}
+                onChange={setSearchInput}
+                prefix={<IconSearch />}
+                placeholder={t('搜索流程单号、组织、申请人…')}
+                showClear
+                className='w-64'
+              />
+            }
           >
             <TabPane
               tab={t('令牌申请')}

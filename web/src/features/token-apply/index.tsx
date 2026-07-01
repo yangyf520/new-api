@@ -104,6 +104,7 @@ type TokenApplicationLog = {
 
 type PolicyRow = {
   id: number
+  token_apply_id?: number
   parent_id?: number | null
   scope_type: string
   scope_code: string
@@ -173,6 +174,34 @@ function DetailField(props: { label: string; value: ReactNode }) {
 function displayValue(value: unknown) {
   if (value === null || value === undefined || value === '') return '-'
   return String(value)
+}
+
+function ApplicationIdCell(props: { id?: number | null }) {
+  const { t } = useTranslation()
+  const id = props.id
+  if (id == null || id <= 0) {
+    return <span className='text-muted-foreground'>-</span>
+  }
+  return (
+    <Link
+      to='/token-apply/$section/$id'
+      params={{ section: 'records', id: String(id) }}
+      className='font-mono text-primary hover:underline'
+      title={t('Application ID')}
+    >
+      {id}
+    </Link>
+  )
+}
+
+function applicationIdColumn<T extends { token_apply_id?: number }>(
+  t: (key: string) => string
+): ColumnDef<T> {
+  return {
+    accessorKey: 'token_apply_id',
+    header: t('Application ID'),
+    cell: ({ row }) => <ApplicationIdCell id={row.original.token_apply_id} />,
+  }
 }
 
 function policyTreeColumns<T extends PolicyRow>(
@@ -261,6 +290,11 @@ function ApplicationsSection() {
 
   const columns = useMemo<ColumnDef<TokenApplication>[]>(
     () => [
+      {
+        accessorKey: 'id',
+        header: t('Application ID'),
+        cell: ({ row }) => <ApplicationIdCell id={row.original.id} />,
+      },
       {
         accessorKey: 'ticket_no',
         header: t('Process No.'),
@@ -388,6 +422,7 @@ function BudgetPoliciesSection() {
 
   const columns = useMemo<ColumnDef<BudgetPolicyRow>[]>(
     () => [
+      applicationIdColumn<BudgetPolicyRow>(t),
       ...(policyTreeColumns<BudgetPolicyRow>(t) as ColumnDef<BudgetPolicyRow>[]),
       currencyColumn(t, 'Cap Amount', 'total_amount'),
       currencyColumn(t, 'Approved Amount', 'approved_amount'),
@@ -428,6 +463,7 @@ function ConsumptionPoliciesSection() {
 
   const columns = useMemo<ColumnDef<ConsumptionPolicyRow>[]>(
     () => [
+      applicationIdColumn<ConsumptionPolicyRow>(t),
       ...(policyTreeColumns<ConsumptionPolicyRow>(t) as ColumnDef<ConsumptionPolicyRow>[]),
       currencyColumn(t, 'Cap Amount', 'cap_amount', 4),
       currencyColumn(t, 'Used Amount', 'used_amount', 4),
@@ -519,6 +555,11 @@ export function TokenApplyDetailPage() {
         <div className='bg-muted/40 h-full rounded-lg border p-4'>
           <h3 className='mb-3 text-sm font-semibold'>{t('Basic Info')}</h3>
           <div className='bg-background grid gap-4 rounded-lg border p-4 sm:grid-cols-2'>
+            <DetailField label={t('Application ID')} value={displayValue(data.id)} />
+            <DetailField
+              label={t('Process No.')}
+              value={displayValue(data.ticket_no)}
+            />
             <DetailField
               label={t('Organization')}
               value={displayValue(`${data.org_code || ''} ${data.org_name || ''}`.trim())}

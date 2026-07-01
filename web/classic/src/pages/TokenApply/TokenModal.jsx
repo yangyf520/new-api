@@ -109,11 +109,12 @@ export default function TokenModal({ application, visible, onClose }) {
   const tokenInfo = useMemo(() => {
     if (!token) return [];
     return [
+      { key: t('申请ID'), value: application?.id ?? '-' },
       { key: t('流程单号'), value: application?.ticket_no || '-' },
       { key: t('令牌名称'), value: token.token_name || '-' },
-      { key: t('令牌编号'), value: token.token_id ?? '-' },
+      { key: t('令牌ID'), value: token.token_id ?? '-' },
     ];
-  }, [application?.ticket_no, t, token]);
+  }, [application?.id, application?.ticket_no, t, token]);
 
   const remainAmount = token
     ? formatApplicationBalanceAmount(token, 'remain_amount', 'remain_quota', currency)

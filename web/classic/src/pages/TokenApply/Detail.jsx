@@ -104,6 +104,10 @@ const TokenApplyDetail = () => {
     if (!detail) return [];
     return [
       {
+        key: t('申请ID'),
+        value: displayValue(detail.id),
+      },
+      {
         key: t('所属组织'),
         value: displayValue(
           `${detail.org_code || ''} ${detail.org_name || ''}`.trim(),
@@ -125,7 +129,7 @@ const TokenApplyDetail = () => {
   const quotaInfo = useMemo(() => {
     if (!detail) return [];
     return [
-      { key: t('令牌编号'), value: displayValue(detail.token_id) },
+      { key: t('令牌ID'), value: displayValue(detail.token_id) },
       { key: t('额度模式'), value: displayValue(detail.quota_mode) },
       {
         key: t('批准额度'),

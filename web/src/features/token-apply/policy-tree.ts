@@ -12,16 +12,37 @@ export type PolicyTreeNode<T extends { id: number; parent_id?: number | null }> 
     children?: PolicyTreeNode<T>[]
   }
 
-export function buildPolicyTree<T extends { id: number; parent_id?: number | null }>(
-  policies: T[]
-): PolicyTreeNode<T>[] {
+function compareByApplyIdDesc<
+  T extends { id: number; token_apply_id?: number | null },
+>(a: T, b: T): number {
+  const aid = Number(a.token_apply_id) || 0
+  const bid = Number(b.token_apply_id) || 0
+  if (bid !== aid) return bid - aid
+  return b.id - a.id
+}
+
+function sortPolicySiblings<
+  T extends { id: number; token_apply_id?: number | null; parent_id?: number | null },
+>(nodes: Array<PolicyTreeNode<T>>) {
+  nodes.sort(compareByApplyIdDesc)
+  for (const node of nodes) {
+    if (node.children?.length) {
+      sortPolicySiblings(node.children)
+    }
+  }
+}
+
+export function buildPolicyTree<
+  T extends { id: number; parent_id?: number | null; token_apply_id?: number | null },
+>(policies: T[]): PolicyTreeNode<T>[] {
   if (!policies.length) return []
+  const sorted = [...policies].sort(compareByApplyIdDesc)
   const byId = new Map<number, PolicyTreeNode<T>>()
-  for (const policy of policies) {
+  for (const policy of sorted) {
     byId.set(policy.id, { ...policy, children: [] })
   }
   const roots: PolicyTreeNode<T>[] = []
-  for (const policy of policies) {
+  for (const policy of sorted) {
     const node = byId.get(policy.id)!
     const parentId = policy.parent_id
     if (parentId != null && byId.has(parentId)) {
@@ -40,6 +61,7 @@ export function buildPolicyTree<T extends { id: number; parent_id?: number | nul
     }
   }
   prune(roots)
+  sortPolicySiblings(roots)
   return roots
 }
 

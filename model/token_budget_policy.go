@@ -198,7 +198,7 @@ func ListTokenBudgetPolicies(scopeType, scopeCode, tokenType string) ([]TokenBud
 		q = q.Where("token_type = ?", normalizeTokenApplyType(s))
 	}
 	var policies []TokenBudgetPolicy
-	err := q.Order("id asc").Find(&policies).Error
+	err := q.Order("token_apply_id desc, id desc").Find(&policies).Error
 	return policies, err
 }
 

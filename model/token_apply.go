@@ -3,7 +3,6 @@ package model
 import (
 	"errors"
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -1150,20 +1149,28 @@ type TokenBudgetPolicyAdminView struct {
 	RemainingAmount float64 `json:"remaining_amount"`
 }
 
+func applyTokenApplyRecordKeywordFilter(q *gorm.DB, keyword string) *gorm.DB {
+	return common.ApplyKeywordOrFilter(q, keyword, func(filter *common.KeywordOrFilter) {
+		filter.CastText("id")
+		filter.Text("ticket_no")
+		filter.Text("org_code")
+		filter.Text("org_name")
+		filter.Text("work_no")
+		filter.Text("user_name")
+		filter.Text("record_id")
+		filter.Text("remark")
+		filter.CastText("amount")
+		filter.CastText("quota")
+		filter.UnixTimestamp("issued_time")
+		filter.Text("currency")
+		filter.SubqueryIn("user_id", "users", "id", "email", "username", "display_name")
+		filter.Expr("token_id IN (SELECT id FROM tokens WHERE "+common.SQLCastTextLike("remain_quota")+")", 1)
+	})
+}
+
 func ListTokenApplicationsAdmin(keyword string, offset, limit int) ([]TokenApplyRecordListItem, int64, error) {
 	q := DB.Model(&TokenApplyRecord{})
-	keyword = strings.TrimSpace(keyword)
-	if keyword != "" {
-		if id, err := strconv.Atoi(keyword); err == nil {
-			q = q.Where("id = ?", id)
-		} else {
-			like := "%" + keyword + "%"
-			q = q.Where(
-				"ticket_no LIKE ? OR org_code LIKE ? OR org_name LIKE ? OR work_no LIKE ? OR user_name LIKE ? OR record_id LIKE ?",
-				like, like, like, like, like, like,
-			)
-		}
-	}
+	q = applyTokenApplyRecordKeywordFilter(q, keyword)
 	var total int64
 	if err := q.Count(&total).Error; err != nil {
 		return nil, 0, err
@@ -1344,18 +1351,7 @@ func ListTokenApplicationsPortal(scope TokenApplyPortalScope, keyword string, of
 		return []TokenApplyRecordListItem{}, 0, nil
 	}
 	q = q.Where("org_code = ?", org)
-	keyword = strings.TrimSpace(keyword)
-	if keyword != "" {
-		if id, err := strconv.Atoi(keyword); err == nil {
-			q = q.Where("id = ?", id)
-		} else {
-			like := "%" + keyword + "%"
-			q = q.Where(
-				"ticket_no LIKE ? OR org_name LIKE ? OR work_no LIKE ? OR user_name LIKE ? OR record_id LIKE ?",
-				like, like, like, like, like,
-			)
-		}
-	}
+	q = applyTokenApplyRecordKeywordFilter(q, keyword)
 	var total int64
 	if err := q.Count(&total).Error; err != nil {
 		return nil, 0, err
