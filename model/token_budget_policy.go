@@ -18,13 +18,38 @@ type TokenBudgetPolicy struct {
 	TotalAmount  float64 `json:"total_amount" gorm:"type:decimal(12,4);default:0"`
 	Currency     string  `json:"currency" gorm:"type:varchar(8);default:'CNY'"`
 	ParentId     *int    `json:"parent_id" gorm:"index"`
-	Enabled      bool    `json:"enabled" gorm:"default:true"`
 	CreatedAt    int64   `json:"created_at" gorm:"bigint;index;default:0"`
 	UpdatedAt    int64   `json:"updated_at" gorm:"bigint;index;default:0"`
 }
 
 func (TokenBudgetPolicy) TableName() string {
 	return "token_budget_policies"
+}
+
+type legacyTokenBudgetPolicy struct {
+	PeriodType string `gorm:"column:period_type"`
+	Enabled    bool   `gorm:"column:enabled"`
+}
+
+func (legacyTokenBudgetPolicy) TableName() string { return "token_budget_policies" }
+
+// migrateTokenBudgetPolicySchema drops orphan columns from legacy token_budget_policies schemas.
+func migrateTokenBudgetPolicySchema() error {
+	if !DB.Migrator().HasTable(&TokenBudgetPolicy{}) {
+		return nil
+	}
+	legacy := &legacyTokenBudgetPolicy{}
+	if DB.Migrator().HasColumn(legacy, "PeriodType") {
+		if err := DB.Migrator().DropColumn(legacy, "PeriodType"); err != nil {
+			return fmt.Errorf("drop token_budget_policies.period_type: %w", err)
+		}
+	}
+	if DB.Migrator().HasColumn(legacy, "Enabled") {
+		if err := DB.Migrator().DropColumn(legacy, "Enabled"); err != nil {
+			return fmt.Errorf("drop token_budget_policies.enabled: %w", err)
+		}
+	}
+	return nil
 }
 
 var (
@@ -83,8 +108,8 @@ func validateTokenBudgetPolicy(tx *gorm.DB, p *TokenBudgetPolicy) error {
 	if common.DecimalLT(p.TotalAmount, 0) {
 		return errors.New("total_amount 不能为负数")
 	}
-	if p.Enabled && !common.DecimalGT(p.TotalAmount, 0) {
-		return errors.New("启用策略时 total_amount 必须大于 0")
+	if !common.DecimalGT(p.TotalAmount, 0) {
+		return errors.New("total_amount 必须大于 0")
 	}
 
 	if p.ParentId != nil {
@@ -363,7 +388,7 @@ func upsertTokenBudgetPolicyFromIssue(tx *gorm.DB, spec tokenBudgetPolicySyncSpe
 	}
 
 	if existing != nil && common.DecimalLT(spec.TotalAmount, existing.TotalAmount) {
-		allPolicies, err := loadEnabledTokenBudgetPolicies(tx)
+		allPolicies, err := loadAllTokenBudgetPolicies(tx)
 		if err != nil {
 			return err
 		}
@@ -390,7 +415,6 @@ func upsertTokenBudgetPolicyFromIssue(tx *gorm.DB, spec tokenBudgetPolicySyncSpe
 		TotalAmount:  spec.TotalAmount,
 		Currency:     spec.Currency,
 		TokenApplyId: spec.TokenApplyId,
-		Enabled:      true,
 		UpdatedAt:    common.GetTimestamp(),
 	}
 	if existing == nil {

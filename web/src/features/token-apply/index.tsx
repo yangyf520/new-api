@@ -204,7 +204,7 @@ function applicationIdColumn<T extends { token_apply_id?: number }>(
   }
 }
 
-function policyTreeColumns<T extends PolicyRow>(
+function policyTreeBaseColumns<T extends PolicyRow>(
   t: (key: string) => string
 ): ColumnDef<T>[] {
   return [
@@ -228,13 +228,15 @@ function policyTreeColumns<T extends PolicyRow>(
       },
     },
     { accessorKey: 'token_type', header: t('Token Type') },
+  ]
+}
+
+function policyPeriodColumns<T extends PolicyRow>(
+  t: (key: string) => string
+): ColumnDef<T>[] {
+  return [
     { accessorKey: 'period_type', header: t('Period') },
     { accessorKey: 'period_key', header: t('Period Key') },
-    {
-      accessorKey: 'enabled',
-      header: t('Enabled'),
-      cell: ({ row }) => (row.original.enabled ? t('Yes') : t('No')),
-    },
   ]
 }
 
@@ -325,7 +327,7 @@ function ApplicationsSection() {
         accessorKey: 'org_code',
         header: t('Organization'),
         cell: ({ row }) =>
-          `${row.original.org_code || ''} ${row.original.org_name || ''}`.trim() || '-',
+          `${row.original.org_name || ''} ${row.original.org_code || ''}`.trim() || '-',
       },
       {
         accessorKey: 'amount',
@@ -423,7 +425,7 @@ function BudgetPoliciesSection() {
   const columns = useMemo<ColumnDef<BudgetPolicyRow>[]>(
     () => [
       applicationIdColumn<BudgetPolicyRow>(t),
-      ...(policyTreeColumns<BudgetPolicyRow>(t) as ColumnDef<BudgetPolicyRow>[]),
+      ...(policyTreeBaseColumns<BudgetPolicyRow>(t) as ColumnDef<BudgetPolicyRow>[]),
       currencyColumn(t, 'Cap Amount', 'total_amount'),
       currencyColumn(t, 'Approved Amount', 'approved_amount'),
       currencyColumn(t, 'Remaining Amount', 'remaining_amount'),
@@ -464,7 +466,8 @@ function ConsumptionPoliciesSection() {
   const columns = useMemo<ColumnDef<ConsumptionPolicyRow>[]>(
     () => [
       applicationIdColumn<ConsumptionPolicyRow>(t),
-      ...(policyTreeColumns<ConsumptionPolicyRow>(t) as ColumnDef<ConsumptionPolicyRow>[]),
+      ...(policyTreeBaseColumns<ConsumptionPolicyRow>(t) as ColumnDef<ConsumptionPolicyRow>[]),
+      ...(policyPeriodColumns<ConsumptionPolicyRow>(t) as ColumnDef<ConsumptionPolicyRow>[]),
       currencyColumn(t, 'Cap Amount', 'cap_amount', 4),
       currencyColumn(t, 'Used Amount', 'used_amount', 4),
       currencyColumn(t, 'Remaining Amount', 'remaining_amount', 4),
@@ -562,7 +565,7 @@ export function TokenApplyDetailPage() {
             />
             <DetailField
               label={t('Organization')}
-              value={displayValue(`${data.org_code || ''} ${data.org_name || ''}`.trim())}
+              value={displayValue(`${data.org_name || ''} ${data.org_code || ''}`.trim())}
             />
             <DetailField label={t('Employee ID')} value={displayValue(data.work_no)} />
             <DetailField

@@ -630,15 +630,12 @@ func checkBudgetDelta(tx *gorm.DB, app *TokenApplyRecord, delta float64) error {
 	if err := lockTokenBudgetPolicyChain(tx, policies); err != nil {
 		return err
 	}
-	allPolicies, err := loadEnabledTokenBudgetPolicies(tx)
+	allPolicies, err := loadAllTokenBudgetPolicies(tx)
 	if err != nil {
 		return err
 	}
 	appCurrency := common.NormalizeCurrency(app.Currency)
 	for _, p := range policies {
-		if !p.Enabled {
-			continue
-		}
 		if !common.CurrencyEqual(appCurrency, p.Currency) {
 			return fmt.Errorf("申请币种 %s 与策略 %s %s 币种 %s 不一致",
 				appCurrency, p.ScopeType, p.ScopeCode, common.NormalizeCurrency(p.Currency))
@@ -667,9 +664,9 @@ func lockTokenBudgetPolicyChain(tx *gorm.DB, policies []*TokenBudgetPolicy) erro
 	return tx.Set("gorm:query_option", "FOR UPDATE").Where("id IN ?", ids).Find(&locked).Error
 }
 
-func loadEnabledTokenBudgetPolicies(query *gorm.DB) ([]TokenBudgetPolicy, error) {
+func loadAllTokenBudgetPolicies(query *gorm.DB) ([]TokenBudgetPolicy, error) {
 	var policies []TokenBudgetPolicy
-	if err := query.Where("enabled = ?", true).Find(&policies).Error; err != nil {
+	if err := query.Find(&policies).Error; err != nil {
 		return nil, err
 	}
 	return policies, nil
@@ -737,19 +734,19 @@ func loadTokenBudgetPolicyChain(db *gorm.DB, app *TokenApplyRecord) ([]*TokenBud
 	tokenType := normalizeTokenApplyType(app.TokenType)
 	if app.Id > 0 {
 		policy := &TokenBudgetPolicy{}
-		err := db.Where("token_apply_id = ? AND token_type = ? AND enabled = ? AND scope_type <> ?",
-			app.Id, tokenType, true, "project").First(policy).Error
+		err := db.Where("token_apply_id = ? AND token_type = ? AND scope_type <> ?",
+			app.Id, tokenType, "project").First(policy).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			if projectCode := strings.TrimSpace(app.ProjectCode); projectCode != "" {
-				err = db.Where("token_apply_id = ? AND scope_type = ? AND scope_code = ? AND token_type = ? AND enabled = ?",
-					app.Id, "project", projectCode, tokenType, true).First(policy).Error
+				err = db.Where("token_apply_id = ? AND scope_type = ? AND scope_code = ? AND token_type = ?",
+					app.Id, "project", projectCode, tokenType).First(policy).Error
 			}
 		}
 		if err == nil {
 			chain := []*TokenBudgetPolicy{policy}
 			for policy.ParentId != nil && *policy.ParentId > 0 {
 				parent := &TokenBudgetPolicy{}
-				if err := db.Where("id = ? AND enabled = ?", *policy.ParentId, true).First(parent).Error; err != nil {
+				if err := db.Where("id = ?", *policy.ParentId).First(parent).Error; err != nil {
 					if errors.Is(err, gorm.ErrRecordNotFound) {
 						break
 					}
@@ -769,12 +766,12 @@ func loadTokenBudgetPolicyChain(db *gorm.DB, app *TokenApplyRecord) ([]*TokenBud
 		return nil, nil
 	}
 	policy := &TokenBudgetPolicy{}
-	err := db.Where("scope_code = ? AND token_type = ? AND enabled = ? AND scope_type <> ?",
-		scopeCode, tokenType, true, "project").First(policy).Error
+	err := db.Where("scope_code = ? AND token_type = ? AND scope_type <> ?",
+		scopeCode, tokenType, "project").First(policy).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		if projectCode := strings.TrimSpace(app.ProjectCode); projectCode != "" {
-			err = db.Where("scope_type = ? AND scope_code = ? AND token_type = ? AND enabled = ?",
-				"project", projectCode, tokenType, true).First(policy).Error
+			err = db.Where("scope_type = ? AND scope_code = ? AND token_type = ?",
+				"project", projectCode, tokenType).First(policy).Error
 		}
 	}
 	if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -786,7 +783,7 @@ func loadTokenBudgetPolicyChain(db *gorm.DB, app *TokenApplyRecord) ([]*TokenBud
 	chain := []*TokenBudgetPolicy{policy}
 	for policy.ParentId != nil && *policy.ParentId > 0 {
 		parent := &TokenBudgetPolicy{}
-		if err := db.Where("id = ? AND enabled = ?", *policy.ParentId, true).First(parent).Error; err != nil {
+		if err := db.Where("id = ?", *policy.ParentId).First(parent).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				break
 			}
@@ -1282,7 +1279,7 @@ func ListTokenBudgetPoliciesAdmin(scopeType, scopeCode, tokenType string) ([]Tok
 	if err != nil {
 		return nil, err
 	}
-	allPolicies, err := loadEnabledTokenBudgetPolicies(DB)
+	allPolicies, err := loadAllTokenBudgetPolicies(DB)
 	if err != nil {
 		return nil, err
 	}

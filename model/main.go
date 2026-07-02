@@ -268,6 +268,9 @@ func migrateDB() error {
 	if err := migrateTokenApplyLogApplicationIdColumn(); err != nil {
 		return err
 	}
+	if err := migrateTokenBudgetPolicySchema(); err != nil {
+		return err
+	}
 
 	err := DB.AutoMigrate(
 		&Channel{},
@@ -345,6 +348,9 @@ func migrateDBFast() error {
 		return err
 	}
 	if err := migrateTokenApplySettingKey(); err != nil {
+		return err
+	}
+	if err := migrateTokenBudgetPolicySchema(); err != nil {
 		return err
 	}
 

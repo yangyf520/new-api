@@ -264,7 +264,7 @@ const TokenApply = () => {
       {
         title: t('所属组织'),
         dataIndex: 'org_code',
-        render: (_, row) => `${row.org_code || ''} ${row.org_name || ''}`.trim() || '-',
+        render: (_, row) => `${row.org_name || ''} ${row.org_code || ''}`.trim() || '-',
       },
       {
         title: t('批准额度'),
@@ -317,14 +317,14 @@ const TokenApply = () => {
         },
       },
       { title: t('令牌类型'), dataIndex: 'token_type' },
+    ],
+    [t],
+  );
+
+  const policyPeriodColumns = useMemo(
+    () => [
       { title: t('周期'), dataIndex: 'period_type' },
       { title: t('周期键'), dataIndex: 'period_key' },
-      {
-        title: t('启用'),
-        dataIndex: 'enabled',
-        width: 72,
-        render: (enabled) => (enabled ? t('是') : t('否')),
-      },
     ],
     [t],
   );
@@ -351,11 +351,12 @@ const TokenApply = () => {
     () => [
       applicationIdCol,
       ...policyTreeBaseColumns,
+      ...policyPeriodColumns,
       currencyAmountCol('封顶额度', 'cap_amount', 4),
       currencyAmountCol('已用额度', 'used_amount', 4),
       currencyAmountCol('剩余额度', 'remaining_amount', 4),
     ],
-    [policyTreeBaseColumns, applicationIdCol, t],
+    [policyTreeBaseColumns, policyPeriodColumns, applicationIdCol, t],
   );
 
   const budgetPolicyTree = useMemo(

@@ -110,7 +110,7 @@ const TokenApplyDetail = () => {
       {
         key: t('所属组织'),
         value: displayValue(
-          `${detail.org_code || ''} ${detail.org_name || ''}`.trim(),
+          `${detail.org_name || ''} ${detail.org_code || ''}`.trim(),
         ),
       },
       { key: t('员工工号'), value: displayValue(detail.work_no) },
