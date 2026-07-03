@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
 
 	"github.com/gin-gonic/gin"
@@ -44,6 +45,10 @@ func ShouldCopyUpstreamHeader(c *gin.Context, k string, v []string) bool {
 func IOCopyBytesGracefully(c *gin.Context, src *http.Response, data []byte) {
 	if c.Writer == nil {
 		return
+	}
+
+	if len(data) > 0 {
+		c.Set(string(constant.ContextKeyLogModelOutput), string(data))
 	}
 
 	body := io.NopCloser(bytes.NewBuffer(data))

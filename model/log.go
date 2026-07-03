@@ -77,6 +77,8 @@ type Log struct {
 	Ip                string `json:"ip" gorm:"index;default:''"`
 	RequestId         string `json:"request_id,omitempty" gorm:"type:varchar(64);index:idx_logs_request_id;default:''"`
 	UpstreamRequestId string `json:"upstream_request_id,omitempty" gorm:"type:varchar(128);index:idx_logs_upstream_request_id;default:''"`
+	UserInput         string `json:"user_input,omitempty" gorm:"column:user_input;type:text"`
+	ModelOutput       string `json:"model_output,omitempty" gorm:"column:model_output;type:text"`
 	Other             string `json:"other"`
 }
 
@@ -127,6 +129,8 @@ func formatUserLogs(logs []*Log, startIdx int) {
 			delete(otherMap, "stream_status")
 		}
 		logs[i].Other = common.MapToJsonStr(otherMap)
+		logs[i].UserInput = ""
+		logs[i].ModelOutput = ""
 	}
 	assignDisplayLogIds(logs, startIdx)
 }
@@ -338,6 +342,8 @@ type RecordConsumeLogParams struct {
 	IsStream         bool                   `json:"is_stream"`
 	Group            string                 `json:"group"`
 	Other            map[string]interface{} `json:"other"`
+	UserInput        string                 `json:"user_input,omitempty"`
+	ModelOutput      string                 `json:"model_output,omitempty"`
 }
 
 func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams) {
@@ -381,6 +387,8 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 		}(),
 		RequestId:         requestId,
 		UpstreamRequestId: upstreamRequestId,
+		UserInput:         params.UserInput,
+		ModelOutput:       params.ModelOutput,
 		Other:             otherStr,
 	}
 	err := createLog(log)

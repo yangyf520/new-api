@@ -187,9 +187,10 @@ func geminiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 		}
 	})
 
+	streamText := responseText.String()
 	if !hasBillableUsageMetadata {
 		if info.ReceivedResponseCount > 0 {
-			usage = service.ResponseText2Usage(c, responseText.String(), info.UpstreamModelName, info.GetEstimatePromptTokens())
+			usage = service.ResponseText2Usage(c, streamText, info.UpstreamModelName, info.GetEstimatePromptTokens())
 		} else {
 			usage = &dto.Usage{}
 		}
@@ -200,7 +201,8 @@ func geminiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 		}
 		attachEstimatedGeminiBillingUsage(usage)
 	} else {
-		patchGeminiZeroCompletionUsage(c, info, usage, responseText.String(), imageCount)
+		patchGeminiZeroCompletionUsage(c, info, usage, streamText, imageCount)
+		service.SetLogModelStreamOutput(c, streamText)
 	}
 
 	return usage, nil

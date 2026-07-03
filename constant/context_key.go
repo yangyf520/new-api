@@ -72,4 +72,5 @@ const (
 	// fallback in authHelper (finishAdminAudit) skips its record to avoid
 	// duplicate entries.
 	ContextKeyAuditLogged ContextKey = "audit_logged"
+	ContextKeyLogModelOutput ContextKey = "log_model_output"
 )

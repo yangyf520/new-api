@@ -242,6 +242,7 @@ func relaySkipModelCallOpenAI(c *gin.Context, info *relaycommon.RelayInfo, reque
 		return types.NewError(err, types.ErrorCodeJsonMarshalFailed, types.ErrOptionWithSkipRetry())
 	}
 
+	c.Set(string(constant.ContextKeyLogModelOutput), mockSkippedModelCallContent)
 	service.PostTextConsumeQuota(c, info, usage, nil)
 	return nil
 }
