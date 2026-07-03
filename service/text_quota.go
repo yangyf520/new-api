@@ -536,56 +536,23 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		IsStream:         relayInfo.IsStream,
 		Group:            relayInfo.UsingGroup,
 		Other:            other,
-		UserInput:        logUserInput(ctx, relayInfo.Request),
-		ModelOutput:      logModelOutput(ctx),
+		UserInput:        marshalUserInputLog(ctx, relayInfo),
+		ModelOutput:      marshalModelOutputLog(ctx, relayInfo),
 	})
 	gopool.Go(func() {
 		perfmetrics.RecordRelaySample(relayInfo, true, int64(summary.CompletionTokens))
 	})
 }
 
-func logUserInput(c *gin.Context, req dto.Request) string {
-	if c != nil && c.Request != nil {
-		contentType := c.Request.Header.Get("Content-Type")
-		if strings.HasPrefix(contentType, "application/json") {
-			if storage, err := common.GetBodyStorage(c); err == nil {
-				if body, err := storage.Bytes(); err == nil && len(body) > 0 {
-					return compactJSONString(string(body))
-				}
-			}
-		}
-	}
-	if req == nil {
-		return ""
-	}
-	data, err := common.Marshal(req)
-	if err != nil {
-		meta := req.GetTokenCountMeta()
-		if meta != nil {
-			return meta.CombineText
-		}
-		return ""
-	}
-	return string(data)
+func marshalUserInputLog(c *gin.Context, relayInfo *relaycommon.RelayInfo) string {
+	return MarshalLogRecord(BuildLogInput(c, relayInfo))
 }
 
-func compactJSONString(s string) string {
-	trimmed := strings.TrimSpace(s)
-	if trimmed == "" {
-		return s
-	}
-	var v any
-	if err := common.UnmarshalJsonStr(trimmed, &v); err != nil {
-		return s
-	}
-	data, err := common.Marshal(v)
-	if err != nil {
-		return s
-	}
-	return string(data)
+func marshalModelOutputLog(c *gin.Context, relayInfo *relaycommon.RelayInfo) string {
+	return MarshalLogRecord(BuildLogOutput(relayInfo, readLogModelOutputRaw(c)))
 }
 
-func logModelOutput(c *gin.Context) string {
+func readLogModelOutputRaw(c *gin.Context) string {
 	if c == nil {
 		return ""
 	}

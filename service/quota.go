@@ -255,6 +255,8 @@ func PostWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, mod
 		IsStream:         relayInfo.IsStream,
 		Group:            relayInfo.UsingGroup,
 		Other:            other,
+		UserInput:        marshalUserInputLog(ctx, relayInfo),
+		ModelOutput:      marshalModelOutputLog(ctx, relayInfo),
 	})
 }
 
@@ -378,8 +380,8 @@ func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, u
 		IsStream:         relayInfo.IsStream,
 		Group:            relayInfo.UsingGroup,
 		Other:            other,
-		UserInput:        logUserInput(ctx, relayInfo.Request),
-		ModelOutput:      logModelOutput(ctx),
+		UserInput:        marshalUserInputLog(ctx, relayInfo),
+		ModelOutput:      marshalModelOutputLog(ctx, relayInfo),
 	})
 	gopool.Go(func() {
 		perfmetrics.RecordRelaySample(relayInfo, true, int64(usage.CompletionTokens))
