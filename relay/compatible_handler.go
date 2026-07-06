@@ -229,20 +229,55 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 
 const mockSkippedModelCallContent = "relay skip model call"
 
+func mockSkippedModelCallText(byteLen int) string {
+	if byteLen <= 0 {
+		return mockSkippedModelCallContent
+	}
+	const unit = "pressure-test-mock-output-"
+	var b strings.Builder
+	b.Grow(byteLen)
+	for b.Len() < byteLen {
+		b.WriteString(unit)
+	}
+	return b.String()[:byteLen]
+}
+
+func mockSkippedModelCallContentForRequest(request *dto.GeneralOpenAIRequest) string {
+	if kb := common.GetEnvOrDefault("RELAY_SKIP_MODEL_CALL_CONTENT_KB", 0); kb > 0 {
+		return mockSkippedModelCallText(kb * 1024)
+	}
+	if request != nil && request.MaxTokens != nil && *request.MaxTokens > 0 {
+		size := int(*request.MaxTokens) * 4
+		if size > 256*1024 {
+			size = 256 * 1024
+		}
+		return mockSkippedModelCallText(size)
+	}
+	return mockSkippedModelCallContent
+}
+
 // relaySkipModelCallOpenAI returns a mock chat completion without calling upstream (RELAY_SKIP_MODEL_CALL).
 func relaySkipModelCallOpenAI(c *gin.Context, info *relaycommon.RelayInfo, request *dto.GeneralOpenAIRequest) *types.NewAPIError {
 	usage := relaySkipModelCallUsage(info)
+	content := mockSkippedModelCallContentForRequest(request)
 	isStream := info.IsStream || lo.FromPtrOr(request.Stream, false)
 
 	if isStream {
-		if err := writeRelaySkipModelCallStreamResponse(c, info, usage); err != nil {
+		if err := writeRelaySkipModelCallStreamResponse(c, info, usage, content); err != nil {
 			return types.NewError(err, types.ErrorCodeJsonMarshalFailed, types.ErrOptionWithSkipRetry())
 		}
-	} else if err := writeRelaySkipModelCallJSONResponse(c, info, usage); err != nil {
-		return types.NewError(err, types.ErrorCodeJsonMarshalFailed, types.ErrOptionWithSkipRetry())
+		service.SetLogModelStreamOutput(c, content)
+	} else {
+		responseBody, err := marshalRelaySkipModelCallJSONResponse(info, usage, content)
+		if err != nil {
+			return types.NewError(err, types.ErrorCodeJsonMarshalFailed, types.ErrOptionWithSkipRetry())
+		}
+		if err := writeRelaySkipModelCallJSONResponse(c, responseBody); err != nil {
+			return types.NewError(err, types.ErrorCodeJsonMarshalFailed, types.ErrOptionWithSkipRetry())
+		}
+		c.Set(string(constant.ContextKeyLogModelOutput), string(responseBody))
 	}
 
-	c.Set(string(constant.ContextKeyLogModelOutput), mockSkippedModelCallContent)
 	service.PostTextConsumeQuota(c, info, usage, nil)
 	return nil
 }
@@ -271,9 +306,8 @@ func relaySkipModelCallCompletionTokens() int {
 	return completion
 }
 
-func writeRelaySkipModelCallJSONResponse(c *gin.Context, info *relaycommon.RelayInfo, usage *dto.Usage) error {
-	c.Header("X-Relay-Skip-Model-Call", "true")
-	c.JSON(http.StatusOK, dto.OpenAITextResponse{
+func marshalRelaySkipModelCallJSONResponse(info *relaycommon.RelayInfo, usage *dto.Usage, content string) ([]byte, error) {
+	return common.Marshal(dto.OpenAITextResponse{
 		Id:      "chatcmpl-skip-model-call",
 		Object:  "chat.completion",
 		Created: time.Now().Unix(),
@@ -281,14 +315,19 @@ func writeRelaySkipModelCallJSONResponse(c *gin.Context, info *relaycommon.Relay
 		Choices: []dto.OpenAITextResponseChoice{{
 			Index:        0,
 			FinishReason: "stop",
-			Message:      dto.Message{Role: "assistant", Content: mockSkippedModelCallContent},
+			Message:      dto.Message{Role: "assistant", Content: content},
 		}},
 		Usage: *usage,
 	})
+}
+
+func writeRelaySkipModelCallJSONResponse(c *gin.Context, responseBody []byte) error {
+	c.Header("X-Relay-Skip-Model-Call", "true")
+	c.Data(http.StatusOK, "application/json; charset=utf-8", responseBody)
 	return nil
 }
 
-func writeRelaySkipModelCallStreamResponse(c *gin.Context, info *relaycommon.RelayInfo, usage *dto.Usage) error {
+func writeRelaySkipModelCallStreamResponse(c *gin.Context, info *relaycommon.RelayInfo, usage *dto.Usage, content string) error {
 	id := "chatcmpl-skip-model-call"
 	created := time.Now().Unix()
 	model := info.OriginModelName
@@ -299,7 +338,7 @@ func writeRelaySkipModelCallStreamResponse(c *gin.Context, info *relaycommon.Rel
 	c.Header("X-Relay-Skip-Model-Call", "true")
 
 	contentDelta := dto.ChatCompletionsStreamResponseChoiceDelta{Role: "assistant"}
-	contentDelta.SetContentString(mockSkippedModelCallContent)
+	contentDelta.SetContentString(content)
 	if err := writeRelaySkipModelCallSSE(c, dto.ChatCompletionsStreamResponse{
 		Id: id, Object: "chat.completion.chunk", Created: created, Model: model,
 		Choices: []dto.ChatCompletionsStreamResponseChoice{{
