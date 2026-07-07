@@ -91,6 +91,12 @@ var DebugEnabled bool
 var MemoryCacheEnabled bool
 
 var LogConsumeEnabled = true
+var LogConsumeAsyncEnabled = true
+var LogConsumeQueueSize = 10000
+var LogConsumeWorkers = 4
+
+// TokenSpendRedisFlushSec controls how often Redis counters are flushed back to DB.
+var TokenSpendRedisFlushSec = 5
 
 var TLSInsecureSkipVerify bool
 var InsecureTLSConfig = &tls.Config{InsecureSkipVerify: true}

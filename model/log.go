@@ -350,20 +350,16 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 	if !common.LogConsumeEnabled {
 		return
 	}
-	logger.LogInfo(c, fmt.Sprintf("record consume log: userId=%d, params=%s", userId, common.GetJsonString(params)))
 	username := c.GetString("username")
 	requestId := c.GetString(common.RequestIdKey)
 	upstreamRequestId := c.GetString(common.UpstreamRequestIdKey)
 	createdAt := common.GetTimestamp()
 	otherStr := common.MapToJsonStr(params.Other)
-	// 判断是否需要记录 IP
 	needRecordIp := false
-	if settingMap, err := GetUserSetting(userId, false); err == nil {
-		if settingMap.RecordIpLog {
-			needRecordIp = true
-		}
+	if userCache, err := GetUserCache(userId); err == nil {
+		needRecordIp = userCache.GetSetting().RecordIpLog
 	}
-	log := &Log{
+	logRow := &Log{
 		UserId:           userId,
 		Username:         username,
 		CreatedAt:        createdAt,
@@ -391,9 +387,12 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 		ModelOutput:       params.ModelOutput,
 		Other:             otherStr,
 	}
-	err := createLog(log)
-	if err != nil {
-		logger.LogError(c, "failed to record log: "+err.Error())
+	if common.LogConsumeAsyncEnabled {
+		if !enqueueConsumeLog(logRow) {
+			writeConsumeLogSync(logRow)
+		}
+	} else {
+		writeConsumeLogSync(logRow)
 	}
 	if common.DataExportEnabled {
 		LogQuotaData(QuotaDataLogParams{

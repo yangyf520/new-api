@@ -117,6 +117,11 @@ func InitEnv() {
 		SysLog("WARNING: RELAY_SKIP_MODEL_CALL=true — 不调用上游模型，仅走鉴权/计费并返回 mock 响应")
 	}
 
+	LogConsumeAsyncEnabled = GetEnvOrDefaultBool("LOG_CONSUME_ASYNC", true)
+	LogConsumeQueueSize = GetEnvOrDefault("LOG_CONSUME_QUEUE_SIZE", 10000)
+	LogConsumeWorkers = GetEnvOrDefault("LOG_CONSUME_WORKERS", 4)
+	TokenSpendRedisFlushSec = GetEnvOrDefault("TOKEN_SPEND_REDIS_FLUSH_SEC", 5)
+
 	// Initialize string variables with GetEnvOrDefaultString
 	GeminiSafetySetting = GetEnvOrDefaultString("GEMINI_SAFETY_SETTING", "BLOCK_NONE")
 	CohereSafetySetting = GetEnvOrDefaultString("COHERE_SAFETY_SETTING", "NONE")

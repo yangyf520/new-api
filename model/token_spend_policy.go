@@ -287,27 +287,21 @@ func ReserveTokenSpendWithPolicies(policies []*TokenSpendPolicy, quotaDelta int,
 	if quotaDelta <= 0 || len(policies) == 0 {
 		return nil
 	}
-	return DB.Transaction(func(tx *gorm.DB) error {
-		return applyTokenSpendQuotaDeltaInTx(tx, policies, quotaDelta, currency, true, tokenApplyId)
-	})
+	return applyTokenSpendQuotaDeltaRedis(policies, quotaDelta, currency, true, tokenApplyId)
 }
 
 func AdjustTokenSpendWithPolicies(policies []*TokenSpendPolicy, preConsumedQuota, actualQuota int, currency string, tokenApplyId int) error {
 	if len(policies) == 0 || preConsumedQuota == actualQuota {
 		return nil
 	}
-	return DB.Transaction(func(tx *gorm.DB) error {
-		return applyTokenSpendQuotaDeltaInTx(tx, policies, actualQuota-preConsumedQuota, currency, true, tokenApplyId)
-	})
+	return applyTokenSpendQuotaDeltaRedis(policies, actualQuota-preConsumedQuota, currency, true, tokenApplyId)
 }
 
 func ReleaseTokenSpendWithPolicies(policies []*TokenSpendPolicy, preConsumedQuota int, currency string, tokenApplyId int) error {
 	if preConsumedQuota <= 0 || len(policies) == 0 {
 		return nil
 	}
-	return DB.Transaction(func(tx *gorm.DB) error {
-		return applyTokenSpendQuotaDeltaInTx(tx, policies, -preConsumedQuota, currency, false, tokenApplyId)
-	})
+	return applyTokenSpendQuotaDeltaRedis(policies, -preConsumedQuota, currency, false, tokenApplyId)
 }
 
 func applyTokenSpendQuotaDeltaInTx(tx *gorm.DB, policies []*TokenSpendPolicy, quotaDelta int, currency string, enforceCap bool, tokenApplyId int) error {

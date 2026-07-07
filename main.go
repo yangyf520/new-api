@@ -69,6 +69,7 @@ func main() {
 	kitutil.Debug.Store(common.DebugEnabled)
 
 	defer func() {
+		model.ShutdownConsumeLogWriter()
 		err := model.CloseDB()
 		if err != nil {
 			common.FatalLog("failed to close database: " + err.Error())
@@ -78,7 +79,9 @@ func main() {
 	if common.RedisEnabled {
 		// for compatibility with old versions
 		common.MemoryCacheEnabled = true
+		model.InitTokenSpendRedis()
 	}
+	model.InitConsumeLogWriter()
 	if common.MemoryCacheEnabled {
 		common.SysLog("memory cache enabled")
 		common.SysLog(fmt.Sprintf("sync frequency: %d seconds", common.SyncFrequency))
