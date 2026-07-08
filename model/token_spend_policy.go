@@ -109,9 +109,10 @@ type tokenSpendPolicySyncSpec struct {
 	Currency     string
 	PeriodType   string
 	TokenApplyId int
+	TokenId      int
 }
 
-func syncTokenSpendPoliciesFromIssue(tx *gorm.DB, req *IssueTokenRequest, tokenType string, tokenApplyId int) error {
+func syncTokenSpendPoliciesFromIssue(tx *gorm.DB, req *IssueTokenRequest, tokenType string, tokenApplyId, tokenId int) error {
 	if req == nil {
 		return nil
 	}
@@ -133,6 +134,7 @@ func syncTokenSpendPoliciesFromIssue(tx *gorm.DB, req *IssueTokenRequest, tokenT
 		Currency:     common.NormalizeCurrency(req.Currency),
 		PeriodType:   periodType,
 		TokenApplyId: tokenApplyId,
+		TokenId:      tokenId,
 	})
 }
 
@@ -153,7 +155,7 @@ func syncTokenSpendPoliciesFromUpdate(tx *gorm.DB, app *TokenApplyRecord, req *U
 		TokenType:  app.TokenType,
 		ScopeType:  req.ScopeType,
 	}
-	return syncTokenSpendPoliciesFromIssue(tx, issueReq, app.TokenType, app.Id)
+	return syncTokenSpendPoliciesFromIssue(tx, issueReq, app.TokenType, app.Id, app.TokenId)
 }
 
 func upsertTokenSpendPolicyFromIssue(tx *gorm.DB, spec tokenSpendPolicySyncSpec) error {
@@ -196,6 +198,7 @@ func upsertTokenSpendPolicyFromIssue(tx *gorm.DB, spec tokenSpendPolicySyncSpec)
 		Currency:     spec.Currency,
 		PeriodType:   spec.PeriodType,
 		TokenApplyId: spec.TokenApplyId,
+		TokenId:      spec.TokenId,
 		Enabled:      true,
 		UpdatedAt:    now,
 	}
@@ -208,6 +211,9 @@ func upsertTokenSpendPolicyFromIssue(tx *gorm.DB, spec tokenSpendPolicySyncSpec)
 		policy.ParentId = existing.ParentId
 		if policy.TokenApplyId <= 0 {
 			policy.TokenApplyId = existing.TokenApplyId
+		}
+		if policy.TokenId <= 0 {
+			policy.TokenId = existing.TokenId
 		}
 	}
 	return tx.Save(policy).Error
@@ -418,6 +424,7 @@ type TokenSpendPolicyView struct {
 	ParentId        *int    `json:"parent_id"`
 	Enabled         bool    `json:"enabled"`
 	TokenApplyId    int     `json:"token_apply_id"`
+	TokenId         int     `json:"token_id"`
 	PeriodKey       string  `json:"period_key"`
 	UsedAmount      float64 `json:"used_amount"`
 	RemainingAmount float64 `json:"remaining_amount"`
@@ -461,6 +468,7 @@ func ListTokenSpendPolicyViews(scopeType, scopeCode, tokenType string) ([]TokenS
 			ParentId:        p.ParentId,
 			Enabled:         p.Enabled,
 			TokenApplyId:    p.TokenApplyId,
+			TokenId:         p.TokenId,
 			PeriodKey:       periodKey,
 			UsedAmount:      used,
 			RemainingAmount: common.RoundDecimal(remaining),

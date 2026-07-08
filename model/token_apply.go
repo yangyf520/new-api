@@ -348,7 +348,7 @@ func IssueTokenApplication(req *IssueTokenRequest) (*IssueTokenResult, error) {
 				return err
 			}
 		}
-		if err := syncTokenSpendPoliciesFromIssue(tx, req, tokenType, app.Id); err != nil {
+		if err := syncTokenSpendPoliciesFromIssue(tx, req, tokenType, app.Id, token.Id); err != nil {
 			return err
 		}
 
