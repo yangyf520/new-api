@@ -17,6 +17,7 @@ import (
 const (
 	tokenSpendRedisPrefix     = "new-api:token_spend:v1:"
 	tokenSpendRedisDirtyKey   = tokenSpendRedisPrefix + "dirty"
+	// Single-key script: Redis Cluster requires all KEYS in one slot; dirty tracking is done in Go.
 	tokenSpendRedisIncrScript = `
 local used = tonumber(redis.call('GET', KEYS[1]) or '0')
 local delta = tonumber(ARGV[1])
@@ -28,7 +29,6 @@ local newUsed = used + delta
 if newUsed < 0 then newUsed = 0 end
 redis.call('SET', KEYS[1], string.format('%.4f', newUsed))
 redis.call('EXPIRE', KEYS[1], tonumber(ARGV[4]))
-redis.call('SADD', KEYS[2], KEYS[1])
 return 1
 `
 )
@@ -51,6 +51,13 @@ func ensureTokenSpendRedisReady() error {
 
 func tokenSpendRedisKey(policyID int, periodKey string) string {
 	return fmt.Sprintf("%s%d:%s", tokenSpendRedisPrefix, policyID, periodKey)
+}
+
+func markTokenSpendRedisDirty(ctx context.Context, spendKey string) {
+	if spendKey == "" || spendKey == tokenSpendRedisDirtyKey {
+		return
+	}
+	_ = common.RDB.SAdd(ctx, tokenSpendRedisDirtyKey, spendKey).Err()
 }
 
 func tokenSpendRedisTTL(periodType string) time.Duration {
@@ -149,7 +156,7 @@ func applyTokenSpendQuotaDeltaRedis(policies []*TokenSpendPolicy, quotaDelta int
 		if enforceCap {
 			enforce = "1"
 		}
-		res, err := common.RDB.EvalSha(ctx, tokenSpendRedisIncrSHA, []string{spendKey, tokenSpendRedisDirtyKey},
+		res, err := common.RDB.EvalSha(ctx, tokenSpendRedisIncrSHA, []string{spendKey},
 			fmt.Sprintf("%.4f", deltaAmount),
 			fmt.Sprintf("%.4f", row.CapAmount),
 			enforce,
@@ -157,6 +164,9 @@ func applyTokenSpendQuotaDeltaRedis(policies []*TokenSpendPolicy, quotaDelta int
 		).Int64()
 		if err != nil {
 			return err
+		}
+		if res >= 0 {
+			markTokenSpendRedisDirty(ctx, spendKey)
 		}
 		if res < 0 {
 			periodLabel := "本周期"
@@ -196,7 +206,7 @@ func ensureTokenSpendRedisSeed(ctx context.Context, spendKey string, row *TokenS
 		return err
 	}
 	if ok {
-		_ = common.RDB.SAdd(ctx, tokenSpendRedisDirtyKey, spendKey).Err()
+		markTokenSpendRedisDirty(ctx, spendKey)
 	}
 	return nil
 }
