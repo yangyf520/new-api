@@ -102,14 +102,16 @@ func normalizeTokenSpendPeriodType(periodType string) string {
 }
 
 type tokenSpendPolicySyncSpec struct {
-	ScopeType    string
-	ScopeCode    string
-	TokenType    string
-	CapAmount    float64
-	Currency     string
-	PeriodType   string
-	TokenApplyId int
-	TokenId      int
+	ScopeType       string
+	ScopeCode       string
+	TokenType       string
+	CapAmount       float64
+	Currency        string
+	PeriodType      string
+	ParentScopeType string
+	ParentScopeCode string
+	TokenApplyId    int
+	TokenId         int
 }
 
 func syncTokenSpendPoliciesFromIssue(tx *gorm.DB, req *IssueTokenRequest, tokenType string, tokenApplyId, tokenId int) error {
@@ -126,7 +128,13 @@ func syncTokenSpendPoliciesFromIssue(tx *gorm.DB, req *IssueTokenRequest, tokenT
 	if scopeCode == "" {
 		return nil
 	}
-	return upsertTokenSpendPolicyFromIssue(tx, tokenSpendPolicySyncSpec{
+	parentScopeType := normalizeTokenBudgetScopeType(req.ParentScopeType)
+	if strings.TrimSpace(req.ParentScopeType) == "" {
+		parentScopeType = "org"
+	}
+	parentCode := strings.TrimSpace(req.ParentOrgCode)
+
+	spec := tokenSpendPolicySyncSpec{
 		ScopeType:    scopeType,
 		ScopeCode:    scopeCode,
 		TokenType:    tokenType,
@@ -135,7 +143,12 @@ func syncTokenSpendPoliciesFromIssue(tx *gorm.DB, req *IssueTokenRequest, tokenT
 		PeriodType:   periodType,
 		TokenApplyId: tokenApplyId,
 		TokenId:      tokenId,
-	})
+	}
+	if parentCode != "" {
+		spec.ParentScopeType = parentScopeType
+		spec.ParentScopeCode = parentCode
+	}
+	return upsertTokenSpendPolicyFromIssue(tx, spec)
 }
 
 func syncTokenSpendPoliciesFromUpdate(tx *gorm.DB, app *TokenApplyRecord, req *UpdateTokenRequest) error {
@@ -148,12 +161,14 @@ func syncTokenSpendPoliciesFromUpdate(tx *gorm.DB, app *TokenApplyRecord, req *U
 		return nil
 	}
 	issueReq := &IssueTokenRequest{
-		OrgCode:    app.OrgCode,
-		Amount:     capAmount,
-		PeriodType: periodType,
-		Currency:   firstNonEmpty(req.Currency, app.Currency),
-		TokenType:  app.TokenType,
-		ScopeType:  req.ScopeType,
+		OrgCode:         app.OrgCode,
+		Amount:          capAmount,
+		PeriodType:      periodType,
+		Currency:        firstNonEmpty(req.Currency, app.Currency),
+		TokenType:       app.TokenType,
+		ScopeType:       req.ScopeType,
+		ParentOrgCode:   req.ParentOrgCode,
+		ParentScopeType: req.ParentScopeType,
 	}
 	return syncTokenSpendPoliciesFromIssue(tx, issueReq, app.TokenType, app.Id, app.TokenId)
 }
@@ -216,6 +231,23 @@ func upsertTokenSpendPolicyFromIssue(tx *gorm.DB, spec tokenSpendPolicySyncSpec)
 			policy.TokenId = existing.TokenId
 		}
 	}
+
+	parentScopeCode := strings.TrimSpace(spec.ParentScopeCode)
+	if parentScopeCode != "" {
+		parentScopeType := spec.ParentScopeType
+		if parentScopeType == "" {
+			parentScopeType = "org"
+		}
+		parent, err := getTokenSpendPolicyByScope(tx, parentScopeType, parentScopeCode, spec.TokenType)
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return fmt.Errorf("父部门消耗策略不存在: %s", parentScopeCode)
+			}
+			return err
+		}
+		policy.ParentId = &parent.Id
+	}
+
 	return tx.Save(policy).Error
 }
 
