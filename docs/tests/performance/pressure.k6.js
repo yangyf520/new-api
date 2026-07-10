@@ -12,9 +12,35 @@ const chatStream = new Counter('chat_stream_total');
 const capHit = new Counter('cap_429_total');
 
 const BASE_URL = __ENV.BASE_URL;
-const TIMEOUT = __ENV.REQUEST_TIMEOUT || '30s';
+const TIMEOUT = __ENV.REQUEST_TIMEOUT || '60s';
 const MOCK = (__ENV.MOCK_MODE || 'true') === 'true';
 const STREAM_RATIO = Number(__ENV.STREAM_RATIO || 0);
+const CHAT_HISTORY_ROUNDS = Number(__ENV.CHAT_HISTORY_ROUNDS || 8);
+const CHAT_CONTENT_KB = Number(__ENV.CHAT_CONTENT_KB || 4);
+const CHAT_OUTPUT_KB = Number(__ENV.CHAT_OUTPUT_KB || 32);
+const MAX_TOKENS = Number(__ENV.MAX_TOKENS || CHAT_OUTPUT_KB * 256);
+
+function kbText(kb, tag) {
+  const unit = `pressure-test-${tag}-`;
+  const target = Math.max(1, kb) * 1024;
+  let out = '';
+  while (out.length < target) {
+    out += unit;
+  }
+  return out.slice(0, target);
+}
+
+function buildChatMessages() {
+  const messages = [];
+  for (let i = 0; i < CHAT_HISTORY_ROUNDS; i++) {
+    messages.push({ role: 'user', content: kbText(CHAT_CONTENT_KB, `user-${i}`) });
+    messages.push({ role: 'assistant', content: kbText(CHAT_CONTENT_KB, `assistant-${i}`) });
+  }
+  messages.push({ role: 'user', content: kbText(CHAT_CONTENT_KB, 'final') });
+  return messages;
+}
+
+const chatMessages = buildChatMessages();
 const seed = JSON.parse(open(__ENV.SEED_FILE));
 const orgCount = Number(seed.org_count || 20);
 const orgPrefix = __ENV.ORG_PREFIX || 'D001-T';
@@ -46,8 +72,8 @@ function chat(token, model, tags) {
   const body = {
     model,
     stream: useStream,
-    max_tokens: 32,
-    messages: [{ role: 'user', content: 'ping' }],
+    max_tokens: MAX_TOKENS,
+    messages: chatMessages,
   };
   const r = http.post(`${BASE_URL}/v1/chat/completions`, JSON.stringify(body), {
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },

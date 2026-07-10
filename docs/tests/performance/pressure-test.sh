@@ -1,13 +1,33 @@
 #!/usr/bin/env bash
-# 压测：MODE=smoke|seed|soak|burst|full  SCALE=dev|prod
+# 压测：MODE=smoke|seed|soak|burst|full|cleanup  SCALE=dev|prod
+# 快捷入口：KEYS=300 RPS=300 DURATION=10m bash pressure-run.sh
 # 说明：docs/tests/performance/pressure-test.md
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
-REPORT_DIR="$SCRIPT_DIR/reports"
+CASE_DIR="$SCRIPT_DIR/cases"
 
 BASE_URL="${BASE_URL:-https://ai.sensetime-inc.com}"
+
+# 企业网络下 k6/curl 需绕过代理直连目标域名
+_setup_no_proxy() {
+  local host
+  host="$(python3 -c "from urllib.parse import urlparse; print(urlparse('${BASE_URL}').hostname or '')")"
+  [[ -z "$host" ]] && return 0
+  local extra="${NO_PROXY_EXTRA:-localhost,127.0.0.1}"
+  export NO_PROXY="${NO_PROXY:+$NO_PROXY,}$host,$extra"
+  export no_proxy="$NO_PROXY"
+}
+_setup_no_proxy
+
+# k6 open() 相对脚本目录解析路径，统一转为绝对路径
+_abs_path() {
+  local p="$1"
+  [[ -z "$p" ]] && return 0
+  [[ "$p" = /* ]] && echo "$p" && return 0
+  echo "$REPO_ROOT/$p"
+}
 MODE="${MODE:-smoke}"
 SCALE="${SCALE:-dev}"
 TEST_TAG="${TEST_TAG:-pt-$(date +%Y%m%d-%H%M%S)}"
@@ -28,17 +48,26 @@ INCREASE_DURATION="${INCREASE_DURATION:-}"
 PORTAL_READ_RPS="${PORTAL_READ_RPS:-10}"
 PORTAL_READ_DURATION="${PORTAL_READ_DURATION:-}"
 INCREASE_DELTA="${INCREASE_DELTA:-100}"
+CHAT_HISTORY_ROUNDS="${CHAT_HISTORY_ROUNDS:-8}"
+CHAT_CONTENT_KB="${CHAT_CONTENT_KB:-4}"
+CHAT_OUTPUT_KB="${CHAT_OUTPUT_KB:-32}"
+MAX_TOKENS="${MAX_TOKENS:-$((CHAT_OUTPUT_KB * 256))}"
+SMOKE_CHAT_HISTORY_ROUNDS="${SMOKE_CHAT_HISTORY_ROUNDS:-2}"
+SMOKE_CHAT_CONTENT_KB="${SMOKE_CHAT_CONTENT_KB:-1}"
+SMOKE_CHAT_OUTPUT_KB="${SMOKE_CHAT_OUTPUT_KB:-4}"
+SMOKE_MAX_TOKENS="${SMOKE_MAX_TOKENS:-$((SMOKE_CHAT_OUTPUT_KB * 256))}"
 
 case "$SCALE" in
-  prod) ORG_COUNT=20; APP_PER_ORG=10; USER_COUNT=300; TARGET_RPS=120; SOAK_DURATION=2h; PEAK_VUS=500; SOAK_MAX_VUS=400 ;;
-  *)    ORG_COUNT=2;  APP_PER_ORG=5;  USER_COUNT=10;  TARGET_RPS=20;  SOAK_DURATION=5m; PEAK_VUS=80;  SOAK_MAX_VUS=100 ;;
+  prod) _SCALE_ORG=20; _SCALE_APP=10; _SCALE_USER=300; _SCALE_RPS=120; _SCALE_SOAK=2h; _SCALE_PEAK=500; _SCALE_SOAK_MAX=400 ;;
+  *)    _SCALE_ORG=2;  _SCALE_APP=5;  _SCALE_USER=10;  _SCALE_RPS=20;  _SCALE_SOAK=5m; _SCALE_PEAK=80;  _SCALE_SOAK_MAX=100 ;;
 esac
-ORG_COUNT="${ORG_COUNT:-$ORG_COUNT}"
-APP_PER_ORG="${APP_KEYS_PER_ORG:-$APP_PER_ORG}"
-USER_COUNT="${USER_KEY_COUNT:-$USER_COUNT}"
-TARGET_RPS="${TARGET_RPS:-$TARGET_RPS}"
-SOAK_DURATION="${SOAK_DURATION:-$SOAK_DURATION}"
-PEAK_VUS="${PEAK_VUS:-$PEAK_VUS}"
+ORG_COUNT="${ORG_COUNT:-$_SCALE_ORG}"
+APP_PER_ORG="${APP_KEYS_PER_ORG:-$_SCALE_APP}"
+USER_COUNT="${USER_KEY_COUNT:-$_SCALE_USER}"
+TARGET_RPS="${TARGET_RPS:-$_SCALE_RPS}"
+SOAK_DURATION="${SOAK_DURATION:-$_SCALE_SOAK}"
+PEAK_VUS="${PEAK_VUS:-$_SCALE_PEAK}"
+SOAK_MAX_VUS="${SOAK_MAX_VUS:-$_SCALE_SOAK_MAX}"
 
 # full + prod 默认开启扩展场景
 if [[ "$MODE" == "full" && "$SCALE" == "prod" ]]; then
@@ -53,13 +82,13 @@ fi
 [[ -z "$TOKEN_API_KEY" ]] && { echo "[error] TOKEN_API_KEY required"; exit 1; }
 
 paths() {
-  SEED_FILE="${SEED_FILE:-$REPORT_DIR/seed-${TEST_TAG}.json}"
-  K6_SUMMARY="$REPORT_DIR/summary-${TEST_TAG}.json"
-  BILL_BEFORE="$REPORT_DIR/billing-before-${TEST_TAG}.json"
-  BILL_AFTER="$REPORT_DIR/billing-after-${TEST_TAG}.json"
-  CALIBRATE="$REPORT_DIR/calibrate-${TEST_TAG}.json"
-  RECON_OUT="$REPORT_DIR/reconcile-${TEST_TAG}.json"
-  REPORT_MD="$REPORT_DIR/report-${TEST_TAG}.md"
+  SEED_FILE="$( _abs_path "${SEED_FILE:-$CASE_DIR/seed-${TEST_TAG}.json}" )"
+  K6_SUMMARY="$CASE_DIR/summary-${TEST_TAG}.json"
+  BILL_BEFORE="$CASE_DIR/billing-before-${TEST_TAG}.json"
+  BILL_AFTER="$CASE_DIR/billing-after-${TEST_TAG}.json"
+  CALIBRATE="$CASE_DIR/calibrate-${TEST_TAG}.json"
+  RECON_OUT="$CASE_DIR/reconcile-${TEST_TAG}.json"
+  REPORT_MD="$CASE_DIR/report-${TEST_TAG}.md"
 }
 
 side_duration() {
@@ -77,6 +106,10 @@ from pathlib import Path
 from urllib.parse import unquote, urlparse
 
 REPO = Path(os.environ["REPO_ROOT"])
+
+# Force direct connections (ignore HTTP(S)_PROXY) to avoid
+# "<urlopen error Tunnel connection failed: 403 Forbidden>" in corp environments.
+NO_PROXY_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 def load_dsn():
     if os.environ.get("SQL_DSN"):
@@ -102,57 +135,95 @@ def post_apply(base, key, body):
         headers={"X-Api-Key": key, "Content-Type": "application/json"},
         data=json.dumps(body).encode())
     try:
-        with urllib.request.urlopen(req, timeout=30) as r:
+        with NO_PROXY_OPENER.open(req, timeout=30) as r:
             raw = r.read().decode()
+            code = r.status
     except urllib.error.HTTPError as e:
         raw = e.read().decode()
-    doc = json.loads(raw)
+        code = e.code
+    try:
+        doc = json.loads(raw)
+    except Exception:
+        return None, f"HTTP {code}: {raw[:200]}"
+    if code == 429:
+        return None, f"429 {doc.get('message') or raw[:200]}"
     if not doc.get("success"):
-        return None, doc.get("message") or raw[:200]
+        return None, doc.get("message") or f"HTTP {code}: {raw[:200]}"
     d = doc.get("data") or {}
     if not d.get("token_key"):
         return None, "empty token_key"
     return {"token": d["token_key"], "org_code": body["org_code"], "token_type": body["token_type"],
         "ticket_no": body["ticket_no"], "token_apply_id": d.get("token_apply_id"), "token_id": d.get("token_id")}, None
 
+def org_code_for(prefix, index, count):
+    if count == 1:
+        return prefix
+    return f"{prefix}{index:03d}"
+
 def cmd_seed(a):
     jobs, seq = [], 0
-    extra = {"parent_org_code": a.parent_org_code, "parent_org_budget": a.parent_org_budget}
+    # parent_org_code is optional. If provided, backend will enforce that the
+    # parent spend policy exists; omit it for simple single-key pressure tests.
+    extra = {}
+    parent_org_code = (a.parent_org_code or "").strip()
+    if parent_org_code:
+        extra = {"parent_org_code": parent_org_code, "parent_org_budget": a.parent_org_budget}
     for o in range(1, a.org_count + 1):
-        oc = f"{a.org_prefix}{o:03d}"
+        oc = org_code_for(a.org_prefix, o, a.org_count)
         for i in range(1, a.app_per_org + 1):
             seq += 1
             t = f"PT-{a.test_tag}-APP-{o:03d}-{i:03d}"
-            jobs.append({"ticket_no": t, "email": f"app+{t}@example.com", "amount": a.key_amount,
+            jobs.append({"ticket_no": t, "email": f"pt{seq:06d}@pt.example.com", "amount": a.key_amount,
                 "currency": "CNY", "org_code": oc, "org_budget": a.org_budget, "period_type": a.period_type,
-                "scope_type": "team", "token_type": "app", "work_no": f"APP{seq:06d}",
-                "token_name": f"app-{t}", "token_group": oc, **extra})
-    npu = max(1, a.user_count // a.org_count)
-    exu = a.user_count - npu * a.org_count
-    for o in range(1, a.org_count + 1):
-        oc = f"{a.org_prefix}{o:03d}"
-        n = npu + (1 if o <= exu else 0)
-        for u in range(1, n + 1):
-            seq += 1
-            t = f"PT-{a.test_tag}-USR-{o:03d}-{u:03d}"
-            jobs.append({"ticket_no": t, "email": f"user+{t}@example.com", "amount": a.key_amount,
-                "currency": "CNY", "org_code": oc, "org_budget": a.org_budget, "period_type": a.period_type,
-                "scope_type": "team", "token_type": "user", "work_no": f"USR{seq:06d}",
-                "token_name": f"user-{t}", "token_group": oc, **extra})
+                "scope_type": "team", "token_type": "app", "work_no": t[-32:],
+                "token_name": f"app-{t}", "token_group": "default", **extra})
+    npu = max(1, a.user_count // a.org_count) if a.user_count > 0 else 0
+    exu = a.user_count - npu * a.org_count if a.user_count > 0 else 0
+    if a.user_count > 0:
+        for o in range(1, a.org_count + 1):
+            oc = org_code_for(a.org_prefix, o, a.org_count)
+            n = npu + (1 if o <= exu else 0)
+            for u in range(1, n + 1):
+                seq += 1
+                t = f"PT-{a.test_tag}-USR-{o:03d}-{u:03d}"
+                jobs.append({"ticket_no": t, "email": f"pu{seq:06d}@pt.example.com", "amount": a.key_amount,
+                    "currency": "CNY", "org_code": oc, "org_budget": a.org_budget, "period_type": a.period_type,
+                    "scope_type": "team", "token_type": "user", "work_no": t[-32:],
+                    "token_name": f"user-{t}", "token_group": "default", **extra})
+    # 全局 API 限流约 180次/3分钟/IP：串行分批 + 间隔，遇 429 退避重试
+    import time
     app, user, err = [], [], []
-    with ThreadPoolExecutor(max_workers=a.workers) as ex:
-        futs = {ex.submit(post_apply, a.base_url, a.api_key, j): j for j in jobs}
-        for fut in as_completed(futs):
-            try:
-                item, e = fut.result()
-            except Exception as x:
-                err.append({"ticket": futs[fut]["ticket_no"], "error": str(x)}); continue
-            if item is None:
-                err.append({"ticket": futs[fut]["ticket_no"], "error": e})
-            elif item["token_type"] == "app":
-                app.append(item)
-            else:
-                user.append(item)
+    interval = float(getattr(a, "interval", 1.2) or 1.2)
+    batch_size = int(getattr(a, "batch_size", 50) or 50)
+    batch_pause = float(getattr(a, "batch_pause", 5) or 5)
+    max_retry = int(getattr(a, "max_retry", 8) or 8)
+    total = len(jobs)
+    for idx, job in enumerate(jobs, 1):
+        item, e = None, None
+        for attempt in range(1, max_retry + 1):
+            item, e = post_apply(a.base_url, a.api_key, job)
+            if item is not None:
+                break
+            msg = (e or "").lower()
+            if "429" in msg or "rate" in msg or "限流" in msg or "too many" in msg:
+                wait = min(30.0, interval * (2 ** (attempt - 1)))
+                print(f"[seed] 429 retry {attempt}/{max_retry} wait={wait:.1f}s ticket={job['ticket_no']}", file=sys.stderr)
+                time.sleep(wait)
+                continue
+            break
+        if item is None:
+            err.append({"ticket": job["ticket_no"], "error": e})
+        elif item["token_type"] == "app":
+            app.append(item)
+        else:
+            user.append(item)
+        if idx % 10 == 0 or idx == total:
+            print(f"[seed] progress {idx}/{total} app={len(app)} user={len(user)} err={len(err)}", file=sys.stderr)
+        if idx < total:
+            time.sleep(interval)
+            if batch_size > 0 and idx % batch_size == 0:
+                print(f"[seed] batch pause {batch_pause}s after {idx}", file=sys.stderr)
+                time.sleep(batch_pause)
     inc, seen = [], set()
     for item in user:
         oc = item.get("org_code")
@@ -164,13 +235,18 @@ def cmd_seed(a):
     if user and user[0].get("token_apply_id"):
         n07 = {"token_apply_id": user[0]["token_apply_id"], "org_code": user[0]["org_code"],
                "current_amount": a.key_amount, "increase_to": a.key_amount + a.increase_delta}
-    out = {"test_tag": a.test_tag, "org_count": a.org_count, "org_prefix": a.org_prefix, "key_amount": a.key_amount,
+    out = {"test_tag": a.test_tag, "org_count": a.org_count, "app_per_org": a.app_per_org,
+           "org_prefix": a.org_prefix, "key_amount": a.key_amount,
            "increase_delta": a.increase_delta, "app": app, "user": user, "increase_targets": inc,
            "n07_target": n07, "errors": err}
     Path(a.out).parent.mkdir(parents=True, exist_ok=True)
     Path(a.out).write_text(json.dumps(out, indent=2, ensure_ascii=False))
-    print(f"[seed] app={len(app)} user={len(user)} inc={len(inc)} err={len(err)} -> {a.out}", file=sys.stderr)
-    sys.exit(0 if app else 1)
+    expect_app, expect_user = a.org_count * a.app_per_org, a.user_count
+    ok = len(app) == expect_app and len(user) == expect_user and not err
+    print(f"[seed] app={len(app)}/{expect_app} user={len(user)}/{expect_user} err={len(err)} -> {a.out}", file=sys.stderr)
+    if not ok:
+        print("[seed] incomplete — refuse to continue until all keys are issued", file=sys.stderr)
+    sys.exit(0 if ok else 1)
 
 def cmd_snapshot(a):
     like = f"PT-{a.test_tag}%"
@@ -207,6 +283,36 @@ def mrate(k6, name):
     v = m.get("values") or {}
     return float(v.get("rate", m.get("rate", 0)) or 0)
 
+def kb_text(kb, tag):
+    unit = f"pressure-test-{tag}-"
+    target = max(1, int(kb)) * 1024
+    out = ""
+    while len(out) < target:
+        out += unit
+    return out[:target]
+
+def chat_messages(history_rounds, content_kb):
+    messages = []
+    for i in range(int(history_rounds)):
+        messages.append({"role": "user", "content": kb_text(content_kb, f"user-{i}")})
+        messages.append({"role": "assistant", "content": kb_text(content_kb, f"assistant-{i}")})
+    messages.append({"role": "user", "content": kb_text(content_kb, "final")})
+    return messages
+
+def chat_payload(model, stream, history_rounds=None, content_kb=None, output_kb=None, max_tokens=None):
+    history_rounds = int(history_rounds if history_rounds is not None else os.environ.get("CHAT_HISTORY_ROUNDS", "8"))
+    content_kb = int(content_kb if content_kb is not None else os.environ.get("CHAT_CONTENT_KB", "4"))
+    output_kb = int(output_kb if output_kb is not None else os.environ.get("CHAT_OUTPUT_KB", "32"))
+    if max_tokens is None:
+        max_tokens = os.environ.get("MAX_TOKENS")
+    max_tokens = int(max_tokens if max_tokens is not None else output_kb * 256)
+    return {
+        "model": model,
+        "stream": stream,
+        "max_tokens": max_tokens,
+        "messages": chat_messages(history_rounds, content_kb),
+    }
+
 def cmd_smoke(a):
     import time
     tag = f"smoke-{int(time.time())}"
@@ -216,7 +322,7 @@ def cmd_smoke(a):
         data = json.dumps(body).encode() if body is not None else None
         req = urllib.request.Request(url, method=method, headers=headers or {}, data=data)
         try:
-            with urllib.request.urlopen(req, timeout=30) as resp:
+            with NO_PROXY_OPENER.open(req, timeout=30) as resp:
                 return resp.status, {k.lower(): v for k, v in resp.headers.items()}, resp.read().decode()
         except urllib.error.HTTPError as e:
             return e.code, {k.lower(): v for k, v in e.headers.items()}, e.read().decode()
@@ -236,7 +342,7 @@ def cmd_smoke(a):
             "ticket_no": tag, "email": f"{tag}@example.com", "amount": 5000, "currency": "CNY",
             "org_code": "D001-SMOKE", "org_budget": 50000, "period_type": "day", "scope_type": "team",
             "token_type": "user", "work_no": "S1", "token_name": tag, "token_group": "default",
-            "parent_org_code": "D001", "parent_org_budget": 100000})
+            "parent_org_code": "", "parent_org_budget": 0})
     apply = json.loads(raw) if raw else {}
     tok = (apply.get("data") or {}).get("token_key", "")
     check(code == 200 and apply.get("success") and tok, "POST /api/token-apply -> issued key")
@@ -256,9 +362,15 @@ def cmd_smoke(a):
 
     for stream in (False, True):
         label = "stream" if stream else "non-stream"
+        payload = chat_payload(
+            model, stream,
+            os.environ.get("SMOKE_CHAT_HISTORY_ROUNDS", "2"),
+            os.environ.get("SMOKE_CHAT_CONTENT_KB", "1"),
+            os.environ.get("SMOKE_CHAT_OUTPUT_KB", "4"),
+            os.environ.get("SMOKE_MAX_TOKENS"),
+        )
         code, hdrs, raw = go("POST", f"{a.base_url.rstrip('/')}/v1/chat/completions",
-            {**auth, "Content-Type": "application/json"},
-            {"model": model, "stream": stream, "max_tokens": 16, "messages": [{"role": "user", "content": "ping"}]})
+            {**auth, "Content-Type": "application/json"}, payload)
         skip = hdrs.get("x-relay-skip-model-call", "")
         check(code == 200, f"POST /v1/chat/completions ({label}) -> {code}")
         check(str(skip).lower() == "true", f"mock header ({label}) -> {skip or 'missing'}")
@@ -273,12 +385,11 @@ def cmd_smoke(a):
 
 def chat_once(base, token, model):
     import urllib.error, urllib.request
-    body = json.dumps({"model": model, "stream": False, "max_tokens": 32,
-        "messages": [{"role": "user", "content": "ping"}]}).encode()
+    body = json.dumps(chat_payload(model, False)).encode()
     req = urllib.request.Request(f"{base.rstrip('/')}/v1/chat/completions", method="POST",
         headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}, data=body)
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with NO_PROXY_OPENER.open(req, timeout=30) as resp:
             return resp.status
     except urllib.error.HTTPError as e:
         return e.code
@@ -300,7 +411,7 @@ def cmd_calibrate(a):
         token_id, before = int(row[0]), int(row[1] or 0)
         r = urllib.request.Request(f"{a.base_url.rstrip('/')}/v1/models",
             headers={"Authorization": f"Bearer {token}"})
-        with urllib.request.urlopen(r, timeout=30) as resp:
+        with NO_PROXY_OPENER.open(r, timeout=30) as resp:
             model = (json.loads(resp.read().decode()).get("data") or [{}])[0].get("id", "")
         if not model:
             raise SystemExit("[error] calibrate: no model")
@@ -436,15 +547,19 @@ sub = p.add_subparsers(dest="cmd", required=True)
 s = sub.add_parser("seed")
 for k, t, d in [("--base-url", str, None), ("--api-key", str, None), ("--test-tag", str, None),
     ("--org-count", int, None), ("--app-per-org", int, None), ("--user-count", int, None),
-    ("--org-budget", int, 500000), ("--key-amount", int, 50000), ("--workers", int, 10), ("--out", str, None)]:
+    ("--org-budget", int, 500000), ("--key-amount", int, 50000), ("--workers", int, 1), ("--out", str, None)]:
     kw = {"type": t}
     if d is not None: kw["default"] = d
     s.add_argument(k, **kw)
 s.add_argument("--org-prefix", default="D001-T")
 s.add_argument("--period-type", default="day")
-s.add_argument("--parent-org-code", default="D001")
+s.add_argument("--parent-org-code", default="")
 s.add_argument("--parent-org-budget", type=int, default=1000000)
 s.add_argument("--increase-delta", type=int, default=100)
+s.add_argument("--interval", type=float, default=1.2, help="seconds between each apply")
+s.add_argument("--batch-size", type=int, default=50, help="pause after every N applies")
+s.add_argument("--batch-pause", type=float, default=5.0, help="seconds to pause between batches")
+s.add_argument("--max-retry", type=int, default=8, help="retries on 429")
 s = sub.add_parser("snapshot"); s.add_argument("--test-tag"); s.add_argument("--org-prefix", default="D001-T"); s.add_argument("--out")
 s = sub.add_parser("smoke"); s.add_argument("--base-url"); s.add_argument("--api-key")
 s = sub.add_parser("calibrate"); s.add_argument("--base-url"); s.add_argument("--seed"); s.add_argument("--test-tag"); s.add_argument("--out")
@@ -458,10 +573,13 @@ PY
 }
 
 run_seed() {
-  paths; mkdir -p "$REPORT_DIR"
+  paths; mkdir -p "$CASE_DIR"
   py seed --base-url "$BASE_URL" --api-key "$TOKEN_API_KEY" --test-tag "$TEST_TAG" \
     --org-count "$ORG_COUNT" --app-per-org "$APP_PER_ORG" --user-count "$USER_COUNT" \
-    --org-prefix "$ORG_PREFIX" --increase-delta "$INCREASE_DELTA" --out "$SEED_FILE"
+    --org-prefix "$ORG_PREFIX" --increase-delta "$INCREASE_DELTA" \
+    --interval "${SEED_INTERVAL:-1.2}" --batch-size "${SEED_BATCH_SIZE:-50}" \
+    --batch-pause "${SEED_BATCH_PAUSE:-5}" --max-retry "${SEED_MAX_RETRY:-8}" \
+    --out "$SEED_FILE"
 }
 
 run_k6() {
@@ -470,7 +588,7 @@ run_k6() {
   local write_dur="${APPLY_WRITE_DURATION:-$side}"
   local portal_dur="${PORTAL_READ_DURATION:-$side}"
   local inc_dur="${INCREASE_DURATION:-$side}"
-  paths; mkdir -p "$REPORT_DIR"
+  paths; mkdir -p "$CASE_DIR"
   [[ "$RECONCILE" == true ]] && py snapshot --test-tag "$TEST_TAG" --org-prefix "$ORG_PREFIX" --out "$BILL_BEFORE"
   if [[ "$RECONCILE" == true ]]; then
     py calibrate --base-url "$BASE_URL" --seed "$SEED_FILE" --test-tag "$TEST_TAG" --out "$CALIBRATE" || true
@@ -485,6 +603,8 @@ run_k6() {
   BASE_URL="$BASE_URL" SEED_FILE="$SEED_FILE" TOKEN_API_KEY="$TOKEN_API_KEY" \
   TARGET_RPS="${TARGET_RPS:-100}" SOAK_DURATION="${SOAK_DURATION:-10m}" PEAK_VUS="${PEAK_VUS:-400}" \
   SOAK_MAX_VUS="${SOAK_MAX_VUS:-300}" MOCK_MODE="${MOCK_MODE:-true}" \
+  CHAT_HISTORY_ROUNDS="$CHAT_HISTORY_ROUNDS" CHAT_CONTENT_KB="$CHAT_CONTENT_KB" \
+  CHAT_OUTPUT_KB="$CHAT_OUTPUT_KB" MAX_TOKENS="$MAX_TOKENS" \
   k6 run --summary-export "$K6_SUMMARY" "$SCRIPT_DIR/pressure.k6.js"
   if [[ "$RECONCILE" == true ]]; then
     py snapshot --test-tag "$TEST_TAG" --org-prefix "$ORG_PREFIX" --out "$BILL_AFTER"
@@ -499,7 +619,7 @@ run_k6() {
 case "$MODE" in
   smoke) py smoke --base-url "$BASE_URL" --api-key "$TOKEN_API_KEY" ;;
   seed) run_seed ;;
-  soak)  [[ -z "$RECONCILE" ]] && RECONCILE=true; [[ -f "${SEED_FILE:-}" ]] || run_seed; paths; run_k6 true false ;;
+  soak)  [[ -z "$RECONCILE" ]] && RECONCILE=true; [[ -n "${SEED_FILE:-}" && -f "$SEED_FILE" ]] || run_seed; paths; run_k6 true false ;;
   burst) [[ -z "$RECONCILE" ]] && RECONCILE=true; [[ -f "${SEED_FILE:-}" ]] || run_seed; paths; run_k6 false true ;;
   full)  RECONCILE=true; run_seed; paths; run_k6 true true ;;
   cleanup)

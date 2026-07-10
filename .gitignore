@@ -41,3 +41,5 @@ service/relayconvert/chat_responses_live_local_test.go
 service/openaicompat/chat_responses_live_local_test.go
 go.work
 go.work.sum
+# Pressure test runtime output (seeds/summaries/logs; may contain API keys)
+docs/tests/**/cases/
