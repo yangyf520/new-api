@@ -530,7 +530,7 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 		))
 	}
 
-	for _, key := range []string{common2.RequestIdKey, "X-Shellapi-Request-Id", "X-Request-Id", "X-Reqid"} {
+	for _, key := range []string{common2.RequestIdKey, "X-Shellapi-Request-Id", "x-request-id", "http_x_reqid"} {
 		if upID := strings.TrimSpace(resp.Header.Get(key)); upID != "" {
 			c.Set(common2.UpstreamRequestIdKey, upID)
 			break
