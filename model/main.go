@@ -495,10 +495,10 @@ func dropPolicyUniqueIndexIfExists(model interface{}, tableName, indexName strin
 			return err
 		}
 	}
-	if common.UsingPostgreSQL || common.UsingSQLite {
+	if common.UsingMainDatabase(common.DatabaseTypePostgreSQL) || common.UsingMainDatabase(common.DatabaseTypeSQLite) {
 		return DB.Exec("DROP INDEX IF EXISTS " + indexName).Error
 	}
-	if common.UsingMySQL {
+	if common.UsingMainDatabase(common.DatabaseTypeMySQL) {
 		var count int64
 		if err := DB.Raw(
 			`SELECT COUNT(*) FROM information_schema.statistics

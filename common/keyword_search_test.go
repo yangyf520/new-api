@@ -16,8 +16,9 @@ func TestKeywordFuzzyPattern(t *testing.T) {
 }
 
 func TestKeywordOrFilter_Build(t *testing.T) {
-	UsingPostgreSQL = false
-	UsingSQLite = true
+	oldMainType := MainDatabaseType()
+	SetMainDatabaseType(DatabaseTypeSQLite)
+	t.Cleanup(func() { SetMainDatabaseType(oldMainType) })
 
 	filter := NewKeywordOrFilter()
 	filter.Text("work_no")
@@ -29,7 +30,8 @@ func TestKeywordOrFilter_Build(t *testing.T) {
 }
 
 func TestKeywordOrFilter_PostgreSQLTextLike(t *testing.T) {
-	UsingPostgreSQL = true
-	UsingSQLite = false
+	oldMainType := MainDatabaseType()
+	SetMainDatabaseType(DatabaseTypePostgreSQL)
+	t.Cleanup(func() { SetMainDatabaseType(oldMainType) })
 	require.Equal(t, "work_no ILIKE ?", SQLTextLike("work_no"))
 }

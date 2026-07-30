@@ -17,7 +17,7 @@ func KeywordFuzzyPattern(keyword string) (pattern string, ok bool) {
 
 // SQLTextLike returns a column LIKE/ILIKE placeholder clause (case-insensitive on PostgreSQL).
 func SQLTextLike(column string) string {
-	if UsingPostgreSQL {
+	if UsingMainDatabase(DatabaseTypePostgreSQL) {
 		return column + " ILIKE ?"
 	}
 	return column + " LIKE ?"
@@ -25,7 +25,7 @@ func SQLTextLike(column string) string {
 
 // SQLCastTextLike returns CAST(column AS TEXT/CHAR) LIKE ? for fuzzy id/numeric search.
 func SQLCastTextLike(column string) string {
-	if UsingPostgreSQL || UsingSQLite {
+	if UsingMainDatabase(DatabaseTypePostgreSQL) || UsingMainDatabase(DatabaseTypeSQLite) {
 		return "CAST(" + column + " AS TEXT) LIKE ?"
 	}
 	return "CAST(" + column + " AS CHAR) LIKE ?"
@@ -33,10 +33,10 @@ func SQLCastTextLike(column string) string {
 
 // SQLUnixTimestampLike returns a formatted unix-epoch column LIKE/ILIKE clause.
 func SQLUnixTimestampLike(column string) string {
-	if UsingPostgreSQL {
+	if UsingMainDatabase(DatabaseTypePostgreSQL) {
 		return "to_char(to_timestamp(" + column + "), 'YYYY-MM-DD HH24:MI:SS') ILIKE ?"
 	}
-	if UsingSQLite {
+	if UsingMainDatabase(DatabaseTypeSQLite) {
 		return "strftime('%Y-%m-%d %H:%M:%S', " + column + ", 'unixepoch') LIKE ?"
 	}
 	return "FROM_UNIXTIME(" + column + ", '%Y-%m-%d %H:%i:%s') LIKE ?"

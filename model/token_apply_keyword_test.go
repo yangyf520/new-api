@@ -15,12 +15,12 @@ func setupTokenApplyKeywordTestDB(t *testing.T) {
 	require.NoError(t, err)
 	oldDB := DB
 	DB = db
-	oldSQLite := common.UsingSQLite
-	common.UsingSQLite = true
+	oldMainType := common.MainDatabaseType()
+	common.SetMainDatabaseType(common.DatabaseTypeSQLite)
 	require.NoError(t, db.AutoMigrate(&TokenApplyRecord{}))
 	t.Cleanup(func() {
 		DB = oldDB
-		common.UsingSQLite = oldSQLite
+		common.SetMainDatabaseType(oldMainType)
 	})
 }
 

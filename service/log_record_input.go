@@ -5,10 +5,11 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/dto"
+	taskdto "github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/relaykit/dto"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
-	"github.com/QuantumNous/new-api/types"
+	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/gin-gonic/gin"
 )
 
@@ -61,13 +62,13 @@ func buildLogInputFromRelayMode(c *gin.Context, info *relaycommon.RelayInfo) (Lo
 		relayconstant.RelayModeMidjourneyUpload,
 		relayconstant.RelayModeMidjourneyVideo,
 		relayconstant.RelayModeMidjourneyEdits:
-		var req dto.MidjourneyRequest
+		var req taskdto.MidjourneyRequest
 		if err := common.UnmarshalBodyReusable(c, &req); err != nil {
 			return LogRecord{}, false
 		}
 		return BuildLogInputFromMidjourney(&req, info.RelayMode), true
 	case relayconstant.RelayModeSwapFace:
-		var req dto.SwapFaceRequest
+		var req taskdto.SwapFaceRequest
 		if err := common.UnmarshalBodyReusable(c, &req); err != nil {
 			return LogRecord{}, false
 		}
@@ -77,7 +78,7 @@ func buildLogInputFromRelayMode(c *gin.Context, info *relaycommon.RelayInfo) (Lo
 	}
 }
 
-func BuildLogInputFromMidjourney(req *dto.MidjourneyRequest, relayMode int) LogRecord {
+func BuildLogInputFromMidjourney(req *taskdto.MidjourneyRequest, relayMode int) LogRecord {
 	if req == nil {
 		return emptyLogRecord(LogKindCustom)
 	}
@@ -105,7 +106,7 @@ func BuildLogInputFromMidjourney(req *dto.MidjourneyRequest, relayMode int) LogR
 	return newLogRecord(LogKindCustom, items)
 }
 
-func BuildLogInputFromSwapFace(req *dto.SwapFaceRequest) LogRecord {
+func BuildLogInputFromSwapFace(req *taskdto.SwapFaceRequest) LogRecord {
 	if req == nil {
 		return emptyLogRecord(LogKindCustom)
 	}
@@ -395,7 +396,7 @@ func extractImageInput(req *dto.ImageRequest) LogRecord {
 	if req.N != nil {
 		appendParam(&items, "n", fmt.Sprintf("%d", *req.N))
 	}
-	if req.Stream {
+	if req.IsStream(nil) {
 		appendParam(&items, "stream", "true")
 	}
 	appendRawMediaField(&items, LogItemTypeImage, "image", req.Image)
