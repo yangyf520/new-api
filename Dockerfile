@@ -2,23 +2,10 @@ FROM harbor.sensetime.com/infra/oven/bun:v1 AS builder
 
 WORKDIR /build/web
 COPY web/package.json web/bun.lock ./
-COPY web/default/package.json ./default/package.json
-COPY web/classic/package.json ./classic/package.json
 RUN bun install --registry=https://registry.npmmirror.com --frozen-lockfile
-COPY ./web/default ./default
+COPY ./web ./
 COPY ./VERSION /build/VERSION
-RUN cd default && DISABLE_ESLINT_PLUGIN='true' VITE_REACT_APP_VERSION=$(cat /build/VERSION) bun run build
-
-FROM harbor.sensetime.com/infra/oven/bun:v1 AS builder-classic
-
-WORKDIR /build/web
-COPY web/package.json web/bun.lock ./
-COPY web/default/package.json ./default/package.json
-COPY web/classic/package.json ./classic/package.json
-RUN bun install --registry=https://registry.npmmirror.com --frozen-lockfile
-COPY ./web/classic ./classic
-COPY ./VERSION /build/VERSION
-RUN cd classic && VITE_REACT_APP_VERSION=$(cat /build/VERSION) bun run build
+RUN DISABLE_ESLINT_PLUGIN='true' VITE_REACT_APP_VERSION=$(cat /build/VERSION) bun run build
 
 FROM harbor.sensetime.com/infra/golang:v1 AS builder2
 ENV GO111MODULE=on CGO_ENABLED=0 GOWORK=off
@@ -45,8 +32,7 @@ ADD relaykit/go.mod ./relaykit/go.mod
 RUN go mod download
 
 COPY . .
-COPY --from=builder /build/web/default/dist ./web/default/dist
-COPY --from=builder-classic /build/web/classic/dist ./web/classic/dist
+COPY --from=builder /build/web/dist ./web/dist
 RUN go build -ldflags "-s -w -X 'github.com/QuantumNous/new-api/common.Version=$(cat VERSION)'" -o new-api
 
 FROM harbor.sensetime.com/infra/debian:bookworm-slimv1
